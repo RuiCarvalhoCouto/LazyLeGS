@@ -129,7 +129,7 @@ class OptimizationParams(ParamGroup):
 
         self.rl_use_my_value = True
         self.use_delete_action = False
-        self.use_prune_estimator = False
+        self.use_prune_estimator = True
         self.rl_inference_only = False
         self.rl_reward_norm = True
         self.rl_use_mixed_precision = True

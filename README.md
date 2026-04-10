@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-    <img src="assets/teaser.pdf" width="800px"/>
+    <img src="assets/teaser.png" width="800px"/>
 </p>
 
 ## 🚀 What is LeGS?
