@@ -68,7 +68,7 @@ args, _ = parser.parse_known_args()
 # all_scenes.extend(tanks_and_temples_scenes)
 # all_scenes.extend(deep_blending_scenes)
 
-all_scenes = ["bicycle"]
+all_scenes = ["room", "counter", "kitchen", "bonsai"]
 
 if not args.skip_training or not args.skip_rendering:
     parser.add_argument('--mipnerf360', "-m360", default="/data2/ningzhh/data/mipnerf360", type=str)
@@ -87,42 +87,48 @@ tandt_timing = 0.
 db_timing = 0.
 
 if not args.skip_training:
-    common_args = " --quiet --eval --use_rl_densification --rl_use_my_value --use_prune_estimator "
+    common_args = " --quiet --eval --rl_use_my_value --use_prune_estimator "
     common_args += " --optimizer_type {}".format(args.optimizer_type)
     
     if args.sh_lower:
         common_args += " --sh_lower"
 
+    prev_scene = None
     for scene in all_scenes:
         start_time = time.time()
 
         grad_thresh_args = f" --grad_thresh {grad_thresh[scene][0]} --grad_abs_thresh {grad_thresh[scene][1]} "
 
+        current_common_args = common_args
+        if prev_scene is not None:
+            current_common_args += f" --rl_controller_path {args.output_path}/{prev_scene}/rl_controller.pth"
+
         if scene in mipnerf360_outdoor_scenes:
             source = args.mipnerf360 + "/" + scene
-            scene_args = common_args
+            scene_args = current_common_args
             scene_args += grad_thresh_args
             CMD = "python train.py -s " + source + " -i images_4 -m " + args.output_path + "/" + f"{scene}" + scene_args + special_args[scene]
 
         if scene in mipnerf360_indoor_scenes:
             source = args.mipnerf360 + "/" + scene
-            scene_args = common_args
+            scene_args = current_common_args
             scene_args += grad_thresh_args
             CMD = "python train.py -s " + source + " -i images_2 -m " + args.output_path + "/" + f"{scene}" + scene_args + special_args[scene]
 
         if scene in tanks_and_temples_scenes:
             source = args.tanksandtemples + "/" + scene
-            scene_args = common_args
+            scene_args = current_common_args
             scene_args += grad_thresh_args
             CMD = "python train.py -s " + source + " -m " + args.output_path + "/" + f"{scene}" + scene_args + special_args[scene] + " --mult 0.7 "
 
         if scene in deep_blending_scenes:
             source = args.deepblending  + "/" + scene
-            scene_args = common_args
+            scene_args = current_common_args
             scene_args += grad_thresh_args
             CMD = "python train.py -s " + source + " -m " + args.output_path + "/" + f"{scene}" + scene_args + special_args[scene] + " --mult 0.7 "
 
         run_cmd(CMD, args)
+        prev_scene = scene
 
         time_elapsed = (time.time() - start_time)/60.0
         if scene in mipnerf360_outdoor_scenes or scene in mipnerf360_indoor_scenes:

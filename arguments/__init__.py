@@ -89,6 +89,7 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+        self.random_background = False
 
         self.prune_until_iter = 25000
         self.min_weight = 0.7
@@ -98,6 +99,7 @@ class OptimizationParams(ParamGroup):
         self.prune_interval = 3000
         self.densify_prune_ratio = 0.45
         self.after_densify_prune_ratio = 0.01
+        self.dynamic_reset_opacity = False
         
         # fastgs parameters
         self.loss_thresh = 0.1
@@ -109,9 +111,10 @@ class OptimizationParams(ParamGroup):
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
         self.fastgs_importance_score_thresh = 5
 
-        # rl parameters
+        ### rl parameters
         self.grad_thresh = 0.0001
-        self.grad_abs_thresh = 0.0005
+        self.grad_abs_thresh = 0.0002
+
         self.rl_lr_delay_mult = 0.01
         self.rl_lr_delay_steps = 0
         self.rl_actor_lr_init = 1e-3
@@ -122,64 +125,33 @@ class OptimizationParams(ParamGroup):
         self.rl_state_encoder_lr_final = 1e-5
         self.rl_critic_lr_init = 1e-3
         self.rl_critic_lr_final = 1e-5
+        self.delay_iter_for_reward = 50
 
-        self.use_fastgs_metric_score = False
-
+        self.rl_use_my_value = True
         self.use_delete_action = False
-        self.binary_rl = False
         self.use_prune_estimator = False
-        self.use_sparse_conv_state_encoder = False
+        self.rl_inference_only = False
+        self.rl_reward_norm = True
+        self.rl_use_mixed_precision = True
+        self.verbose = False
+        self.use_validate_cam_list = False
+        self.rl_inference_only = False
 
         self.rl_state_dim = 11
         self.rl_net_hidden_dim = 64
         self.rl_rollout_batch_size = 1
+        self.rl_mini_batch_size = 1
+        self.rl_chunk_size = 200000
         self.rl_gamma = 0.99
         self.rl_gae_lambda = 0.95
         self.rl_policy_clip = 0.2
-
         self.metric_map_ssim_lambda = 0.2
         self.ppo_n_epochs = 1
-        self.use_cosine_annealing_score_thresh = False
-        self.metric_score_thresh = 0.7
-        self.fastgs_metric_score_thresh = 20
-        self.prune_score_thresh = 2.0
         self.entropy_loss_init = 0
         self.entropy_loss_final = 0
         self.my_min_opacity_init = 0.005
         self.my_min_opacity_final = 0.1
-        self.prune_big_points = False
-        self.use_prune_score = False
-        self.prune_score_prune_from_iter = 3000
-        self.keep_action_bonus_init = 0.0
-        self.keep_action_bonus_final = 0.0
-        self.delete_action_bonus_init = 0.0
-        self.delete_action_bonus_final = 0.0
-        self.clone_action_cost_init = 0.
-        self.clone_action_cost_final = 0.
-        self.split_action_cost_init = 0.
-        self.split_action_cost_final = 0.
-        self.rl_reward_local_w = 1.0
-        self.rl_reward_global_w = 0.2
-        self.rl_reward_local_scale = 0.05
-        self.rl_reward_global_w_clip = 5.0
-        self.rl_reward_norm = True
-        self.rl_reward_norm_clip = 5.0
-        self.rl_adv_norm = False
-        self.rl_adv_norm_clip = 5.0
-        self.rl_use_my_value = False
-        self.use_validate_cam_list = False
-        self.regular_adv = "abs"
-        self.visualize_policy = False
 
-        self.voxel_size = 0.02
-
-        self.verbose = False
-
-        # PPO Loss权重系数
-        self.rl_vf_coef = 1.0
-        self.rl_value_clip = 0.2
-
-        self.random_background = False
         self.optimizer_type = "default"
         super().__init__(parser, "Optimization Parameters")
 

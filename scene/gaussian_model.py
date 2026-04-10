@@ -51,7 +51,7 @@ class GaussianModel:
         self.inverse_opacity_activation = identity_gate
         self._opacity = self.opacity_activation(old_opacities)
 
-    def __init__(self, sh_degree, optimizer_type="default", training_args=None, use_rl_densification=False):
+    def __init__(self, sh_degree, optimizer_type="default", training_args=None):
         self.active_sh_degree = 0
         self.optimizer_type = optimizer_type
         self.max_sh_degree = sh_degree  
@@ -72,12 +72,10 @@ class GaussianModel:
 
         self.training_args = training_args
         
-        self.use_rl_densification = use_rl_densification
         self.rl_controller = None
         # 用于追踪稠密化后点和原点的映射关系
         self.parent_mapping = None
-        if use_rl_densification:
-            self.rl_controller = GaussianDensificationController(training_args=training_args, device="cuda")
+        self.rl_controller = GaussianDensificationController(training_args=training_args, device="cuda")
 
         self.setup_functions()
 
@@ -117,26 +115,45 @@ class GaussianModel:
         )
     
     def restore(self, model_args, training_args):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
-        self._features_rest,
-        self._scaling, 
-        self._rotation, 
-        self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum,
-        xyz_gradient_accum_abs, 
-        denom,
-        opt_dict, 
-        shopt_dict,
-        self.spatial_lr_scale) = model_args
+        if len(model_args) == 14:
+            (self.active_sh_degree,
+            self._xyz,
+            self._features_dc,
+            self._features_rest,
+            self._scaling,
+            self._rotation,
+            self._opacity,
+            self.max_radii2D,
+            xyz_gradient_accum,
+            xyz_gradient_accum_abs,
+            denom,
+            opt_dict,
+            shopt_dict,
+            self.spatial_lr_scale) = model_args
+        elif len(model_args) == 13:
+            (self.active_sh_degree,
+            self._xyz,
+            self._features_dc,
+            self._features_rest,
+            self._scaling,
+            self._rotation,
+            self._opacity,
+            self.max_radii2D,
+            xyz_gradient_accum,
+            xyz_gradient_accum_abs,
+            denom,
+            opt_dict,
+            self.spatial_lr_scale) = model_args
+            shopt_dict = None
+        else:
+            raise ValueError(f"Unexpected GaussianModel checkpoint length: {len(model_args)}")
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.xyz_gradient_accum_abs = xyz_gradient_accum_abs
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
-        self.shoptimizer.load_state_dict(shopt_dict)
+        if shopt_dict is not None and hasattr(self, 'shoptimizer'):
+            self.shoptimizer.load_state_dict(shopt_dict)
 
     @property
     def get_scaling(self):
@@ -240,14 +257,10 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
 
-        if self.use_rl_densification:
-            self.rl_controller.training_setup(training_args)
+        self.rl_controller.training_setup(training_args)
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
-        # if self.use_rl_densification:
-        #     self.rl_controller.update_learning_rate(iteration)
-
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
@@ -460,117 +473,13 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def densify_and_split_fastgs(self, metric_mask, filter, N=2):
-        n_init_points = self.get_xyz.shape[0]
-
-        selected_pts_mask = torch.zeros((n_init_points), dtype=bool, device="cuda")
-        mask = torch.logical_and(metric_mask, filter)
-        selected_pts_mask[:mask.shape[0]] = mask
-
-        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
-        means =torch.zeros((stds.size(0), 3),device="cuda")
-        samples = torch.normal(mean=means, std=stds)
-        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
-        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
-        new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
-        new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
-        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
-        new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
-        new_tmp_radii = self.tmp_radii[selected_pts_mask].repeat(N)
-
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_tmp_radii)
-
-        prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
-        self.prune_points(prune_filter)
-
-    def densify_and_clone_fastgs(self, metric_mask, filter):
-        selected_pts_mask = torch.logical_and(metric_mask, filter)
-        
-        new_xyz = self._xyz[selected_pts_mask]
-        new_features_dc = self._features_dc[selected_pts_mask]
-        new_features_rest = self._features_rest[selected_pts_mask]
-        new_opacities = self._opacity[selected_pts_mask]
-        new_scaling = self._scaling[selected_pts_mask]
-        new_rotation = self._rotation[selected_pts_mask]
-        new_tmp_radii = self.tmp_radii[selected_pts_mask]
-
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii)
-
-    def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
-        
-        ''' 
-            Densification and Pruning based on FastGS criteria:
-            1.  The gaussians candidate for densification are selected based on the gradient of their position first.
-            2.  Then, based on their average metric score (computed over multiple sampled views), they are either densified (cloned) or split.
-                This is our main contribution compared to the vanilla 3DGS.
-            3.  Finally, gaussians with low opacity or very large size are pruned.
-        '''
-        grad_vars = self.xyz_gradient_accum / self.denom
-        grad_vars[grad_vars.isnan()] = 0.0
-        self.tmp_radii = radii
-
-        grads_abs = self.xyz_gradient_accum_abs / self.denom
-        grads_abs[grads_abs.isnan()] = 0.0
-
-        grad_qualifiers = torch.where(torch.norm(grad_vars, dim=-1) >= args.grad_thresh, True, False)
-        grad_qualifiers_abs = torch.where(torch.norm(grads_abs, dim=-1) >= args.grad_abs_thresh, True, False)
-        clone_qualifiers = torch.max(self.get_scaling, dim=1).values <= args.dense*extent
-        split_qualifiers = torch.max(self.get_scaling, dim=1).values > args.dense*extent
-
-        all_clones = torch.logical_and(clone_qualifiers, grad_qualifiers)
-        all_splits = torch.logical_and(split_qualifiers, grad_qualifiers_abs)
-
-        # This is our multi-view consisent metric for densification
-        # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
-        metric_mask = importance_score > args.fastgs_importance_score_thresh
-
-        self.densify_and_clone_fastgs(metric_mask, all_clones)
-        self.densify_and_split_fastgs(metric_mask, all_splits)
-
-        # n_all_qualifiers = torch.logical_and(torch.logical_or(clone_qualifiers, split_qualifiers), metric_mask).sum()
-        # n_actual_clones = torch.logical_and(all_clones, metric_mask).sum()
-        # n_actual_splits = torch.logical_and(all_splits, metric_mask).sum()
-        # print(f"n_all_qualifiers: {n_all_qualifiers}, actual_clones: {n_actual_clones / n_all_qualifiers:.4f}, actual_splits: {n_actual_splits / n_all_qualifiers:.4f}")
-
-        prune_mask = (self.get_opacity < min_opacity).squeeze(-1)
-        if max_screen_size:
-            big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
-
-        scores = 1 - pruning_score 
-        to_remove = torch.sum(prune_mask)
-        remove_budget = int(0.5 * to_remove)
-
-        # The budget is not necessary for our method.
-        if remove_budget:
-            n_init_points = self.get_xyz.shape[0]
-            padded_importance = torch.zeros((n_init_points), dtype=torch.float32)
-            padded_importance[:scores.shape[0]] = 1 / (1e-6 + scores.squeeze(-1))
-            selected_pts_mask = torch.zeros_like(padded_importance, dtype=bool, device="cuda")
-            sampled_indices = torch.multinomial(padded_importance, remove_budget, replacement=False)
-            selected_pts_mask[sampled_indices] = True
-            final_prune = torch.logical_and(prune_mask, selected_pts_mask)
-            self.prune_points(final_prune)
-        
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.8))
-        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
-        self._opacity = optimizable_tensors["opacity"]
-        tmp_radii = self.tmp_radii
-        self.tmp_radii = None
-
-        torch.cuda.empty_cache()
-
-    def densify_and_prune_rl(self, max_screen_size, min_opacity, extent, radii, args, gaussians_state_for_rl, iteration=None, tb_writer=None, importance_score=None, metric_score=None, prune_score=None, visible_mask=None, dataset=None):
+    def densify_and_prune_rl(self, min_opacity, radii, args, gaussians_state_for_rl, iteration=None, tb_writer=None, visible_mask=None):
         xyz = self.get_xyz
         curr_n_points = xyz.shape[0]
         opacity = self.get_opacity.squeeze(-1)
 
         opacity_median = opacity.median().item()
         opacity_mean = opacity.mean().item()
-        if self.training_args.verbose:
-            print("opacity_median:", opacity_median, "opacity_mean:", opacity_mean)
 
         grad_vars = self.xyz_gradient_accum / self.denom
         grad_vars[grad_vars.isnan()] = 0.0
@@ -582,108 +491,46 @@ class GaussianModel:
         grad_qualifiers = torch.where(torch.norm(grad_vars, dim=-1) >= args.grad_thresh, True, False)
         grad_qualifiers_abs = torch.where(torch.norm(grads_abs, dim=-1) >= args.grad_abs_thresh, True, False)
 
-        vanilla_grad_qualifiers = torch.where(torch.norm(grad_vars, dim=-1) >= 0.0002, True, False)
-        clone_qualifiers = torch.max(self.get_scaling, dim=1).values <= 0.01 * extent
-        split_qualifiers = torch.max(self.get_scaling, dim=1).values > 0.01 * extent
-        vanilla_all_clones = torch.logical_and(clone_qualifiers, vanilla_grad_qualifiers)
-        vanilla_all_splits = torch.logical_and(split_qualifiers, vanilla_grad_qualifiers)
-
-        #! 注意条件
-        # valid_mask = grad_qualifiers
         valid_mask = torch.logical_or(grad_qualifiers, grad_qualifiers_abs)
         if self.training_args.verbose:
             print(f"n grad qualifiers points: {valid_mask.sum().item() / curr_n_points:.4f}")
 
-        # if importance_score is not None and iteration > 3000:
-        #     important_mask = importance_score > self.training_args.fastgs_metric_score_thresh
-        #     valid_mask = torch.logical_or(valid_mask, important_mask)
-        #     if self.training_args.verbose:
-        #         print(f"n important points: {important_mask.sum().item() / curr_n_points:.4f}")
+        if visible_mask is not None:
+            valid_mask = torch.logical_and(valid_mask, visible_mask)
 
-        valid_mask = torch.logical_and(valid_mask, visible_mask)
-
-        # my_min_opacity = 0.005
         my_min_opacity = cosine_annealing(
             iteration - args.densify_from_iter,
             args.densify_until_iter - args.densify_from_iter,
-            initial_temp=0.01, final_temp=0.1
+            initial_temp=args.my_min_opacity_init, final_temp=args.my_min_opacity_final
         )
         prune_mask = opacity < (my_min_opacity if self.training_args.use_prune_estimator else min_opacity)
 
-        # if metric_score is not None:
-        #     metric_score = metric_score[visible_mask]
-        #     metric_score = (metric_score - metric_score.min()) / (metric_score.max() - metric_score.min())
-        #     metric_score_prune_mask = metric_score < 0.1
-        #     if self.training_args.verbose:
-        #         print(f"n metric score prune mask points: {metric_score_prune_mask.sum().item() / curr_n_points:.4f}")
-        #     prune_mask[visible_mask] = metric_score_prune_mask
-
-        if self.training_args.verbose:
-            print(f"n final valid mask points: {valid_mask.sum().item() / curr_n_points:.4f}")
-            print(f"n final prune mask points: {prune_mask.sum().item() / curr_n_points:.4f}")
-
         if args.use_prune_estimator and visible_mask is not None:
             prune_mask = torch.logical_and(prune_mask, visible_mask)
-        if self.training_args.verbose:
-            print(f"n opacity prune mask points: {prune_mask.sum().item() / curr_n_points:.4f}")
 
         if args.use_prune_estimator:
-            # none_prune_mask = valid_mask.clone()
-
             valid_mask = torch.logical_or(valid_mask, prune_mask)
-
-            # none_prune_mask = none_prune_mask[valid_mask]
 
             prune_mask = prune_mask[valid_mask]
             none_prune_mask = torch.logical_not(prune_mask)
 
-            encoded_state = self.rl_controller.state_encoder(gaussians_state_for_rl[valid_mask])
+            encoded_state = self.rl_controller._batch_encode(gaussians_state_for_rl[valid_mask], chunk_size=self.rl_controller.training_args.rl_chunk_size, use_checkpoint=False)
 
             if prune_mask.any():
                 prune_probs = self.rl_controller.prune_estimator(encoded_state[prune_mask])
 
             none_prune_probs = self.rl_controller.actor(encoded_state[none_prune_mask])
 
-            if self.training_args.verbose:
-                if args.use_delete_action:
-                    print(f"Actor prob distribution: keep={none_prune_probs[:, 0].mean().item():.4f}, clone={none_prune_probs[:, 1].mean().item():.4f}, split={none_prune_probs[:, 2].mean().item():.4f}, delete={none_prune_probs[:, 3].mean().item():.4f}")
-                else:
-                    print(f"Actor prob distribution: keep={none_prune_probs[:, 0].mean().item():.4f}, clone={none_prune_probs[:, 1].mean().item():.4f}, split={none_prune_probs[:, 2].mean().item():.4f}")
-                if prune_mask.any():
-                    print(f"Prune estimator prob distribution: accept={prune_probs.mean().item():.4f}")
-
             dist = torch.distributions.Categorical(none_prune_probs)
             non_prune_action = dist.sample().long()
 
             if prune_mask.any():
                 prune_action = torch.where(torch.bernoulli(prune_probs).bool(), 3, 0).squeeze(-1).long()
-                if self.training_args.verbose:
-                    print(f"prune action distribution: keep={(prune_action == 0).sum().item() / prune_action.shape[0]}, prune={(prune_action == 3).sum().item() / prune_action.shape[0]}")
 
             action = torch.zeros(encoded_state.shape[0], device="cuda", dtype=torch.long)
             action[none_prune_mask] = non_prune_action
             if prune_mask.any():
                 action[prune_mask] = prune_action
-
-            # none_prune_probs = none_prune_probs.gather(1, non_prune_action.unsqueeze(-1))
-            # prune_probs = torch.where(prune_action.unsqueeze(-1) == 3, prune_probs, 1 - prune_probs)
-            # _none_prune_probs = torch.zeros(encoded_state.shape[0], 1, device="cuda")
-            # _prune_probs = torch.zeros(encoded_state.shape[0], 1, device="cuda")
-            # _none_prune_probs[none_prune_mask] = none_prune_probs
-            # _prune_probs[prune_mask] = prune_probs
-            # prune_probs = _prune_probs
-            # none_prune_probs = _none_prune_probs
-            
-            # # 重叠时由概率决定action归属none prune probs还是prune probs
-            # overlap_mask = torch.logical_and(none_prune_mask, prune_mask)
-            # if overlap_mask.any():
-            #     overlap_prune_probs = prune_probs[overlap_mask]
-            #     overlap_none_prune_probs = none_prune_probs[overlap_mask]
-            #     # 归一化重叠的prune合不prune的概率
-            #     overlap_probs = torch.stack([overlap_none_prune_probs, overlap_prune_probs], dim=-1)
-            #     overlap_probs = overlap_probs / overlap_probs.sum(dim=-1, keepdim=True)
-            #     overlap_action = torch.distributions.Categorical(overlap_probs).sample().long().squeeze(-1)
-            #     action[overlap_mask] = overlap_action
 
             _action = torch.zeros(curr_n_points, device="cuda", dtype=torch.long)
             _action[valid_mask] = action
@@ -696,16 +543,9 @@ class GaussianModel:
         else:
             valid_mask[prune_mask] = False
 
-            encoded_state = self.rl_controller.state_encoder(gaussians_state_for_rl[valid_mask])
+            encoded_state = self.rl_controller._batch_encode(gaussians_state_for_rl[valid_mask], chunk_size=self.rl_controller.training_args.rl_chunk_size, use_checkpoint=False)
             prob = self.rl_controller.actor(encoded_state)
-            
-            if self.training_args.verbose:
-                if args.use_delete_action:
-                    print(f"Actor prob distribution: keep={prob[:, 0].mean().item():.4f}, clone={prob[:, 1].mean().item():.4f}, split={prob[:, 2].mean().item():.4f}, delete={prob[:, 3].mean().item():.4f}")
-                else:
-                    print(f"Actor prob distribution: keep={prob[:, 0].mean().item():.4f}, clone={prob[:, 1].mean().item():.4f}, split={prob[:, 2].mean().item():.4f}")
-            
-            #* 决定gs点可执行的action
+
             dist = torch.distributions.Categorical(prob)
             action = dist.sample().long()# (n,)
 
@@ -714,31 +554,22 @@ class GaussianModel:
             action = _action
             action[prune_mask] = 3
 
-        # 统计每个动作的比例
-        actor_valid_mask = valid_mask & (~prune_mask)
-        keep_ratio = torch.logical_and(action == 0, actor_valid_mask).sum().item() / actor_valid_mask.sum().item()
-        clone_ratio = torch.logical_and(action == 1, actor_valid_mask).sum().item() / actor_valid_mask.sum().item()
-        split_ratio = torch.logical_and(action == 2, actor_valid_mask).sum().item() / actor_valid_mask.sum().item()
-        if prune_mask.any():
-            delete_ratio = torch.logical_and(action == 3, prune_mask).sum().item() / prune_mask.sum().item()
-        else:
-            delete_ratio = 0.0
-        tb_writer.add_scalar("rl/action_keep_ratio", keep_ratio, iteration)
-        tb_writer.add_scalar("rl/action_clone_ratio", clone_ratio, iteration)
-        tb_writer.add_scalar("rl/action_split_ratio", split_ratio, iteration)
-        tb_writer.add_scalar("rl/action_delete_ratio", delete_ratio, iteration)
+        if tb_writer:
+            # 统计每个动作的比例
+            actor_valid_mask = valid_mask & (~prune_mask)
+            actor_valid_denom = max(actor_valid_mask.sum().item(), 1)
+            keep_ratio = torch.logical_and(action == 0, actor_valid_mask).sum().item() / actor_valid_denom
+            clone_ratio = torch.logical_and(action == 1, actor_valid_mask).sum().item() / actor_valid_denom
+            split_ratio = torch.logical_and(action == 2, actor_valid_mask).sum().item() / actor_valid_denom
+            if prune_mask.any():
+                delete_ratio = torch.logical_and(action == 3, prune_mask).sum().item() / max(prune_mask.sum().item(), 1)
+            else:
+                delete_ratio = 0.0
 
-        # 保存action可视化
-        if iteration == 5000 and getattr(args, "visualize_policy", False):
-            vis_action = action.clone()
-            vis_action[~valid_mask] = -1
-            self.save_ply(os.path.join(dataset.model_path, "visualization/5000_iter_points.ply"))
-            np.save(os.path.join(dataset.model_path, "visualization/5000_iter_action_from_rl.npy"), vis_action.detach().view(-1).cpu().numpy())
-
-            action_from_fastgs = torch.zeros_like(action)
-            action_from_fastgs[vanilla_all_clones] = 1
-            action_from_fastgs[vanilla_all_splits] = 2
-            np.save(os.path.join(dataset.model_path, "visualization/5000_iter_action_vanilla.npy"), action_from_fastgs.detach().view(-1).cpu().numpy())
+            tb_writer.add_scalar("rl/action_keep_ratio", keep_ratio, iteration)
+            tb_writer.add_scalar("rl/action_clone_ratio", clone_ratio, iteration)
+            tb_writer.add_scalar("rl/action_split_ratio", split_ratio, iteration)
+            tb_writer.add_scalar("rl/action_delete_ratio", delete_ratio, iteration)
 
         clone_action_mask = action == 1
         split_action_mask = action == 2
@@ -781,18 +612,15 @@ class GaussianModel:
 
         # delete
         padded_prune_mask = torch.zeros(self.get_xyz.shape[0], device="cuda", dtype=bool)
-        #* 注意先处理delete action，再删除split action的原点，以保证下标不错乱
+        #* 先处理delete action，再删除split action的原点，以保证下标不错乱
         padded_prune_mask[actual_delete_indices] = True
 
-        #* 注意别忘记split后要删除原点
+        #* split后要删除原点
         split_prune_mask = torch.zeros(self.get_xyz.shape[0], device="cuda", dtype=bool)
         split_prune_mask[actual_split_indices] = True
         self.prune_points(split_prune_mask)
         parent_mapping = parent_mapping[~split_prune_mask]
         padded_prune_mask = padded_prune_mask[~split_prune_mask]
-
-        # #* 标记为delay prune的点，渲染时不透明度会置为负数并跳过，不影响渲染结果
-        # self.delay_prune_mask = padded_prune_mask
 
         self.prune_points(padded_prune_mask)
         parent_mapping = parent_mapping[~padded_prune_mask]
@@ -812,34 +640,13 @@ class GaussianModel:
         )
 
         self.parent_mapping = parent_mapping
-        if self.training_args.verbose:
-            print(f"n_points_after_densification: {self.get_xyz.shape[0]}, n_valid_points_after_densification: {(self.get_opacity >= min_opacity).sum().item()}")
     
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         self.xyz_gradient_accum_abs[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, 2:], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
-    def final_prune_fastgs(self, min_opacity, pruning_score = None):
-        """Final-stage pruning: remove Gaussians based on opacity and multi-view consistency.
-        In the final stage we remove Gaussians that have low opacity or that are flagged by
-        our multi-view reconstruction consistency metric (provided as `pruning_score`)."""
-        prune_mask = (self.get_opacity < min_opacity).squeeze(-1) 
-        if self.training_args.verbose:
-            print("n opacity prune points:", prune_mask.sum().item())
-        scores_mask = pruning_score > 0.9
-        if self.training_args.verbose:
-            print("n prune score prune points:", scores_mask.sum().item())
-        final_prune = torch.logical_or(prune_mask, scores_mask)
-        self.prune_points(final_prune)
-
-    def final_prune_rl(self, min_opacity, gaussians_state_for_rl, prune_score=None, extent=None):
+    def final_prune_rl(self, min_opacity):
         prune_mask = (self.get_opacity < min_opacity).squeeze(-1)
-        if self.training_args.verbose:
-            print("n opacity prune points:", prune_mask.sum().item())
         final_prune = prune_mask
-
-        if self.training_args.verbose:
-            print(f"actual final prune: {final_prune.sum().item()}")
-
         self.prune_points(final_prune)

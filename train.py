@@ -12,6 +12,7 @@
 import os, random, time, shutil, pathlib, sys
 import torch
 import numpy as np
+import json
 import uuid
 from torch_scatter import scatter_mean, scatter_add
 from random import randint
@@ -67,7 +68,7 @@ def saveRuntimeCode(dst: str) -> None:
     print('Backup Finished! Code backed up to:', dst)
 
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets, use_rl_densification=False, rl_controller_path=None):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets, rl_controller_path=None):
     if saving_iterations[-1] != opt.iterations:
         saving_iterations.append(opt.iterations)
     if len(testing_iterations) != 0 and testing_iterations[-1] != opt.iterations:
@@ -75,7 +76,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type, training_args=opt, use_rl_densification=use_rl_densification)
+    gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type, training_args=opt)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
     if checkpoint:
@@ -104,7 +105,35 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # record time
     optim_start = torch.cuda.Event(enable_timing=True)
     optim_end = torch.cuda.Event(enable_timing=True)
-    total_time = 0.0
+    
+    render_start = torch.cuda.Event(enable_timing=True)
+    render_end = torch.cuda.Event(enable_timing=True)
+    densify_start = torch.cuda.Event(enable_timing=True)
+    densify_end = torch.cuda.Event(enable_timing=True)
+    reward_start = torch.cuda.Event(enable_timing=True)
+    reward_end = torch.cuda.Event(enable_timing=True)
+    rl_start = torch.cuda.Event(enable_timing=True)
+    rl_end = torch.cuda.Event(enable_timing=True)
+    
+    event_cam = torch.cuda.Event(enable_timing=True)
+    event_loss = torch.cuda.Event(enable_timing=True)
+    event_backward = torch.cuda.Event(enable_timing=True)
+    event_log_save = torch.cuda.Event(enable_timing=True)
+    event_opt = torch.cuda.Event(enable_timing=True)
+    
+    training_statistics = {
+        "camera_picking": 0.0,
+        "render": 0.0,
+        "loss_compute": 0.0,
+        "backward": 0.0,
+        "log_and_test": 0.0,
+        "densify_and_prune": 0.0,
+        "reward_compute": 0.0,
+        "rl_learn": 0.0,
+        "optimizer_step": 0.0,
+        "total": 0.0
+    }
+    torch.cuda.reset_peak_memory_stats()
 
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
@@ -112,7 +141,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     bg = torch.rand((3), device="cuda") if opt.random_background else background
     img_num = -1
 
+    my_viewpoint_stack = scene.getTrainCameras().copy()
+
     for iteration in range(first_iter, opt.iterations + 1):
+        densify_executed = False
+        reward_executed = False
+        rl_executed = False
 
         if websockets:
             if network_gui_ws.curr_id >= 0 and network_gui_ws.curr_id < len(scene.getTrainCameras()):
@@ -135,13 +169,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             viewpoint_stack = scene.getTrainCameras().copy()
             viewpoint_indices = list(range(len(viewpoint_stack)))
 
-            # 随机 pop 10个视角作为验证集
-            validate_viewpoints = []
-            for _ in range(10):
-                rand_idx = randint(0, len(viewpoint_indices) - 1)
-                validate_viewpoints.append(viewpoint_stack.pop(rand_idx))
-                _ = viewpoint_indices.pop(rand_idx)
-
             if img_num == -1:
                 img_num = len(viewpoint_stack)
 
@@ -149,11 +176,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewpoint_cam = viewpoint_stack.pop(rand_idx)
         _ = viewpoint_indices.pop(rand_idx)
 
+        event_cam.record()
+
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
+        render_start.record()
         render_pkg = render_fastgs(viewpoint_cam, gaussians, pipe, bg, opt.mult)
+        render_end.record()
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         # Loss
@@ -161,7 +192,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         ssim_value = fast_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        
+        event_loss.record()
+        
         loss.backward()
+        
+        event_backward.record()
 
         iter_end.record()
 
@@ -180,15 +216,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians to {}".format(iteration, dataset.model_path))
                 scene.save(iteration)
+                torch.save(gaussians.rl_controller.capture(), os.path.join(dataset.model_path, "point_cloud", f"iteration_{iteration}", "rl_controller.pth"))
             
+            event_log_save.record()
             optim_start.record()
 
             # Optimization step
             if iteration < opt.iterations:
-                if getattr(gaussians, "delay_prune_mask", None) is not None:
-                    # 手动清除 delay prune 点的梯度，避免影响训练
-                    gaussians._opacity.grad[gaussians.delay_prune_mask] = 0.0
-
                 if opt.optimizer_type == "default":
                     gaussians.optimizer_step(iteration)
                 elif opt.optimizer_type == "sparse_adam":
@@ -196,6 +230,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.optimizer.step(visible, radii.shape[0])
                     gaussians.optimizer.zero_grad(set_to_none = True)
             
+            event_opt.record()
+
         # Densification
         if iteration < opt.densify_until_iter:
             # Keep track of max radii in image-space for pruning
@@ -203,232 +239,141 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                
-                if opt.use_validate_cam_list:
-                    camlist = validate_viewpoints.copy()
-                else:
-                    my_viewpoint_stack = scene.getTrainCameras().copy()
-                    camlist = sampling_cameras(my_viewpoint_stack)
+                camlist = sampling_cameras(my_viewpoint_stack)
 
-                if use_rl_densification:
-                    gaussians_state_for_rl, metric_score, visible_mask, global_metric, _, pre_metric_map_list, fastgs_score = get_gaussians_state_for_rl(scene, camlist, gaussians, pipe, bg, opt, iteration=iteration)
-                    pre_global_metric = global_metric.clone()
-                    pre_metric_score = metric_score.clone()
-                    pre_visible_mask = visible_mask.clone()
-                    # pre_uv_gradient_accum = uv_gradient_accum.clone()
+                densify_executed = True
+                densify_start.record()
 
-                    if opt.verbose:
-                        print(f"global_metric: {global_metric.item():.8f}")
-                        print(f"metric_score min: {metric_score[visible_mask].min().item():.8f}, metric_score max: {metric_score[visible_mask].max().item():.8f}, metric_score mean: {metric_score[visible_mask].mean().item():.8f}")
-                    prune_score = metric_score.clone()
-                    # assert not metric_score.isnan().any()
-                    # assert not metric_score.isinf().any()
+                gaussians_state_for_rl, metric_score, visible_mask = get_gaussians_state_for_rl(camlist, gaussians, pipe, bg, opt)
+                pre_metric_score = metric_score.clone()
+                pre_visible_mask = visible_mask.clone()
 
-                    pre_gradient_norm_accm = (gaussians.xyz_gradient_accum / gaussians.denom).squeeze(1)
-                    pre_gradient_norm_accm[pre_gradient_norm_accm.isnan()] = 0.
-
-                    with torch.no_grad():
-                        if opt.use_fastgs_metric_score:
-                            metric_score, prune_score = compute_gaussian_score_fastgs(camlist, gaussians, pipe, bg, opt, DENSIFY=True)
-                        gaussians.densify_and_prune_rl(size_threshold, 0.005, scene.cameras_extent, radii, opt,
-                            gaussians_state_for_rl, iteration=iteration, tb_writer=tb_writer, importance_score=fastgs_score, metric_score=metric_score, prune_score=prune_score, visible_mask=visible_mask, dataset=dataset)
-                else:
-                    with torch.no_grad():
-                        # The multiview consistent densification of fastgs
-                        importance_score, pruning_score = compute_gaussian_score_fastgs(camlist, gaussians, pipe, bg, opt, DENSIFY=True)                    
-                        gaussians.densify_and_prune_fastgs(max_screen_size = size_threshold, 
-                                                    min_opacity = 0.005, 
-                                                    extent = scene.cameras_extent, 
-                                                    radii=radii,
-                                                    args=opt,
-                                                    importance_score=importance_score,
-                                                    pruning_score=pruning_score)
+                with torch.no_grad():
+                    gaussians.densify_and_prune_rl(0.005, radii, opt,
+                        gaussians_state_for_rl, iteration=iteration, tb_writer=tb_writer, visible_mask=visible_mask)
 
             if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                my_min_opacity = 0.005
-                if use_rl_densification and opt.use_prune_estimator:
-                    my_min_opacity = cosine_annealing(
+                _min_opacity = 0.005
+                if opt.use_prune_estimator and opt.dynamic_reset_opacity:
+                    _min_opacity = cosine_annealing(
                         iteration - opt.densify_from_iter,
                         opt.densify_until_iter - opt.densify_from_iter,
                         opt.my_min_opacity_init,
                         opt.my_min_opacity_final,
                     )
-                gaussians.reset_opacity(my_min_opacity + 0.005)
-                # gaussians.reset_opacity(my_min_opacity * 2)
+                gaussians.reset_opacity(_min_opacity + 0.005)
+            
+            if densify_executed:
+                densify_end.record()
 
-        # The multiview consistent pruning of fastgs. We do it every 3k iterations after 15k
-        # In this stage, the model converge basically. So we can prune more aggressively without degrading rendering quality.
-        # You can check the rendering results of 20K iterations in arxiv version (https://arxiv.org/abs/2511.04283), the rendering quality is already very good.
         if iteration % 3000 == 0 and iteration > opt.densify_until_iter and iteration < opt.iterations:
-            if use_rl_densification:
-                gaussians_state_for_rl, metric_score, visible_mask, global_metric, _, _, _ = get_gaussians_state_for_rl(scene, camlist, gaussians, pipe, bg, opt, iteration=iteration)
-                prune_score = metric_score.clone()
-                with torch.no_grad():
-                    gaussians.final_prune_rl(min_opacity = opt.my_min_opacity_final, gaussians_state_for_rl=gaussians_state_for_rl, prune_score=prune_score, extent=scene.cameras_extent)
-            else:
-                with torch.no_grad():
-                    _, pruning_score = compute_gaussian_score_fastgs(camlist, gaussians, pipe, bg, opt)                  
-                    gaussians.final_prune_fastgs(min_opacity = opt.my_min_opacity_final, pruning_score = pruning_score)
+            densify_executed = True
+            gaussians.final_prune_rl(min_opacity = opt.my_min_opacity_final)
 
-        delay_iteration = iteration - 50
-        if use_rl_densification and delay_iteration > opt.densify_from_iter and delay_iteration < opt.densify_until_iter \
-            and delay_iteration % opt.densification_interval == 0 and len(gaussians.rl_controller.transition["state_list"]) > 0:
+        delayed_iteration = iteration - opt.delay_iter_for_reward
+        if delayed_iteration > opt.densify_from_iter and delayed_iteration < opt.densify_until_iter \
+            and delayed_iteration % opt.densification_interval == 0 and len(gaussians.rl_controller.transition["state_list"]) > 0:
 
-            if opt.visualize_policy and delay_iteration == 5000 :
-                gaussians.save_ply(os.path.join(dataset.model_path, "visualization/10000_iter_points_after_densification.ply"))
-                return
+            reward_executed = True
+            reward_start.record()
+            torch.cuda.empty_cache()
 
-            eps = 1e-8
-            reward = gaussians.rl_controller.transition["reward_list"][-1].squeeze(-1)
-            action = gaussians.rl_controller.transition["action_list"][-1].squeeze(-1)
-            prune_mask = gaussians.rl_controller.transition["prune_mask_list"][-1].squeeze(-1)
-            valid_mask = gaussians.rl_controller.transition["valid_mask_list"][-1].squeeze(-1)
+            reward = gaussians.rl_controller.transition["reward_list"][-1].squeeze(-1).cuda()
+            action = gaussians.rl_controller.transition["action_list"][-1].squeeze(-1).cuda()
+            prune_mask = gaussians.rl_controller.transition["prune_mask_list"][-1].squeeze(-1).cuda()
+            valid_mask = gaussians.rl_controller.transition["valid_mask_list"][-1].squeeze(-1).cuda()
             parent_mapping = gaussians.parent_mapping
             
-            # 用跟计算state同样的view进行reward计算
-            new_metric_score, new_global_metric, new_visible_mask, _ = get_metric_score(scene, camlist, gaussians, pipe, bg, opt, pre_metric_map_list=pre_metric_map_list)
-
-            new_gradient_norm_accum = (gaussians.xyz_gradient_accum / gaussians.denom).squeeze(1)
-            new_gradient_norm_accum[new_gradient_norm_accum.isnan()] = 0.
-
             with torch.no_grad():
+                new_metric_score, new_visible_mask = get_metric_score(camlist, gaussians, pipe, bg, opt)
                 new_metric_score = scatter_add(new_metric_score, parent_mapping, dim=0, dim_size=reward.shape[0])
                 new_visible_mask = scatter_add(new_visible_mask.float(), parent_mapping, dim=0, dim_size=reward.shape[0])
-                # assert not new_metric_score.isnan().any() and not new_metric_score.isinf().any()
                 final_visible_mask = torch.logical_and(pre_visible_mask, new_visible_mask.bool())
                 valid_mask[(action != 3) & ~final_visible_mask] = False  # 忽略非删除点又没有同时在两次渲染中出现的点
-                gaussians.rl_controller.transition["valid_mask_list"][-1] = valid_mask
-                # gaussians.rl_controller.transition["final_visible_mask_list"].append(final_visible_mask)
-
-                new_gradient_norm_accum = scatter_mean(new_gradient_norm_accum, parent_mapping, dim=0, dim_size=reward.shape[0])
-                grad_improvement = torch.zeros_like(reward)
-                pre_gradient_norm_accm = pre_gradient_norm_accm[final_visible_mask]
-                new_gradient_norm_accum = new_gradient_norm_accum[final_visible_mask]
-                grad_improvement[final_visible_mask] = (pre_gradient_norm_accm - new_gradient_norm_accum) / (pre_gradient_norm_accm + 1e-10)
+                gaussians.rl_controller.transition["valid_mask_list"][-1] = valid_mask.cpu()
 
                 points_improvement = new_metric_score[valid_mask] - pre_metric_score[valid_mask]
-                global_improvement = (new_global_metric - pre_global_metric) / (pre_global_metric.abs() + eps)
-
                 reward[valid_mask] += points_improvement
-
-                if opt.verbose:
-                    print("avg grad_improvement:", grad_improvement[final_visible_mask].mean().item())
-                    print("avg points_improvement:", points_improvement.mean().item())
-                    print("avg global_improvement:", global_improvement.mean().item())
 
                 if getattr(opt, "rl_reward_norm", True) and pre_visible_mask.any():
                     reward_valid = reward[valid_mask]
-                    reward_mean = reward_valid.mean()
-                    reward_std = reward_valid.std()
-                    reward_valid = (reward_valid - reward_mean) / reward_std
-                    reward[valid_mask] = reward_valid
-                    if opt.verbose:
-                        print(f"reward norm mean: {reward_mean}, reward norm std: {reward_std}")
-                    tb_writer.add_scalar("reward/norm_mean", reward_mean.item(), iteration)
-                    tb_writer.add_scalar("reward/norm_std", reward_std.item(), iteration)
+                    if reward_valid.numel() > 0:
+                        reward_mean = reward_valid.mean()
+                        reward_std = reward_valid.std()
+                        reward_valid = (reward_valid - reward_mean) / (reward_std + 1e-6)
+                        reward[valid_mask] = reward_valid
 
-                # Decay action bonus
-                keep_action_bonus = cosine_annealing(
-                    iteration - opt.densify_from_iter,
-                    opt.densify_until_iter - opt.densify_from_iter,
-                    opt.keep_action_bonus_init, opt.keep_action_bonus_final
-                )
-                delete_action_bonus = cosine_annealing(
-                    iteration - opt.densify_from_iter,
-                    opt.densify_until_iter - opt.densify_from_iter,
-                    opt.delete_action_bonus_init, opt.delete_action_bonus_final
-                )
-                # if opt.verbose:
-                #     print(f"keep_action_bonus: {keep_action_bonus:.4f}")
-                #     print(f"delete_action_bonus: {delete_action_bonus:.4f}")
-
-                # clone_action_cost = cosine_annealing(
-                #     iteration - opt.densify_from_iter,
-                #     opt.densify_until_iter - opt.densify_from_iter,
-                #     getattr(opt, "clone_action_cost_init", 0.0),
-                #     getattr(opt, "clone_action_cost_final", 0.0),
-                # )
-                # split_action_cost = cosine_annealing(
-                #     iteration - opt.densify_from_iter,
-                #     opt.densify_until_iter - opt.densify_from_iter,
-                #     getattr(opt, "split_action_cost_init", 0.0),
-                #     getattr(opt, "split_action_cost_final", 0.0),
-                # )
-                # if opt.verbose:
-                #     print(f"clone_action_cost: {clone_action_cost:.4f}, split_action_cost: {split_action_cost:.4f}")
-                # # tb_writer.add_scalar("reward/clone_action_cost", clone_action_cost, iteration)
-                # # tb_writer.add_scalar("reward/split_action_cost", split_action_cost, iteration)
-
-                action_bonus = torch.zeros_like(reward)
-                action_bonus[(action == 0) & valid_mask & (~prune_mask)] += keep_action_bonus
-                action_bonus[(action == 3) & valid_mask & prune_mask] += delete_action_bonus
-
-                reward += action_bonus
-
-                if opt.verbose:
-                    print(f"reward min: {reward.min()}, reward max: {reward.max()}, reward mean: {reward.mean()}, reward median: {reward.median()}")
+                        if tb_writer:
+                            tb_writer.add_scalar("reward/norm_mean", reward_mean.item(), iteration)
+                            tb_writer.add_scalar("reward/norm_std", reward_std.item(), iteration)
 
                 if opt.rl_use_my_value:
                     value = torch.zeros_like(reward)
-                    value[valid_mask & prune_mask] = reward[valid_mask & prune_mask & (action == 0)].mean()
-                    value[valid_mask & (~prune_mask)] = reward[valid_mask & (~prune_mask) & (action == 0)].mean()
-                    gaussians.rl_controller.transition["value_list"].append(value.unsqueeze(-1))
+                    prune_keep_mask = valid_mask & prune_mask & (action == 0)
+                    non_prune_keep_mask = valid_mask & (~prune_mask) & (action == 0)
+                    if prune_keep_mask.any():
+                        value[valid_mask & prune_mask] = reward[prune_keep_mask].mean()
+                    if non_prune_keep_mask.any():
+                        value[valid_mask & (~prune_mask)] = reward[non_prune_keep_mask].mean()
+                    gaussians.rl_controller.transition["value_list"].append(value.unsqueeze(-1).cpu())
 
                 # # 记录reward统计
-                tb_writer.add_scalar("reward/reward_mean", reward.mean().item(), iteration)
-                tb_writer.add_scalar("reward/reward_std", reward.std().item(), iteration)
-                tb_writer.add_scalar("rl/new_global_metric", new_global_metric, iteration)
+                if tb_writer:
+                    tb_writer.add_scalar("reward/reward_mean", reward.mean().item(), iteration)
+                    tb_writer.add_scalar("reward/reward_std", reward.std().item(), iteration)
 
-                gaussians.rl_controller.transition["reward_list"][-1] = reward.unsqueeze(-1)
-
-                if opt.verbose:
-                    print("reward for actor:")
-                    keep_reward = reward[~prune_mask & (action == 0) & valid_mask]
-                    clone_reward = reward[(action == 1) & valid_mask]
-                    split_reward = reward[(action == 2) & valid_mask]
-                    print("keep avg reward:", keep_reward.mean().item(), "clone avg reward:", clone_reward.mean().item(), "split avg reward:", split_reward.mean().item())
-
-                    if opt.use_prune_estimator:
-                        print("reward for prune estimator:")
-                        keep_reward = reward[prune_mask & (action == 0) & valid_mask]
-                        delete_reward = reward[(action == 3) & valid_mask]
-                        print("keep avg reward:", keep_reward.mean().item(), "delete avg reward:", delete_reward.mean().item())
-
-                # delay delete action
-                if getattr(gaussians, "delay_prune_mask", None) is not None:
-                    gaussians.prune_points(gaussians.delay_prune_mask)
-                    gaussians.parent_mapping = gaussians.parent_mapping[~gaussians.delay_prune_mask]
-                    gaussians.delay_prune_mask = None
+                gaussians.rl_controller.transition["reward_list"][-1] = reward.unsqueeze(-1).cpu()
+            
+            reward_end.record()
 
             if len(gaussians.rl_controller.transition["state_list"]) == opt.rl_rollout_batch_size:
-                lr = gaussians.rl_controller.update_learning_rate(delay_iteration - opt.densify_from_iter)
-                if opt.verbose:
-                    print("lr:", lr)
-                gaussians.rl_controller.learn(iteration=iteration, tb_writer=tb_writer)
+                rl_executed = True
+                rl_start.record()
+                lr = gaussians.rl_controller.update_learning_rate(delayed_iteration - opt.densify_from_iter)
+                if not opt.rl_inference_only:
+                    gaussians.rl_controller.learn(iteration=iteration, tb_writer=tb_writer)
                 gaussians.parent_mapping = None
                 gaussians.rl_controller.transition.clear()
+                torch.cuda.empty_cache()
+                rl_end.record()
 
         # record time
         optim_end.record()
         torch.cuda.synchronize()
         optim_time = optim_start.elapsed_time(optim_end)
-        total_time += (iter_time + optim_time) / 1e3
+            
+        training_statistics["camera_picking"] += iter_start.elapsed_time(event_cam)
+        training_statistics["render"] += event_cam.elapsed_time(render_end)
+        training_statistics["loss_compute"] += render_end.elapsed_time(event_loss)
+        training_statistics["backward"] += event_loss.elapsed_time(event_backward)
+        training_statistics["log_and_test"] += event_backward.elapsed_time(event_log_save)
+        training_statistics["optimizer_step"] += event_log_save.elapsed_time(event_opt)
+        
+        if densify_executed:
+            training_statistics["densify_and_prune"] += densify_start.elapsed_time(densify_end)
+        if reward_executed:
+            training_statistics["reward_compute"] += reward_start.elapsed_time(reward_end)
+        if rl_executed:
+            training_statistics["rl_learn"] += rl_start.elapsed_time(rl_end)
+            
+        training_statistics["total"] += (iter_time + optim_time)
 
     peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2)
+    
+    print("\n--- Training Time Statistics ---")
+    stats_to_save = {}
+    for k, v in training_statistics.items():
+        time_s = v / 1000
+        percentage = v / training_statistics['total'] * 100
+        stats_to_save[k] = {"time_s": time_s, "percentage": percentage}
+    
+    print(f"Training Time: {stats_to_save['total']['time_s']:.2f} s")
+    stats_to_save["GS_number"] = gaussians._xyz.shape[0]
+    stats_to_save["peak_gpu_memory_mb"] = peak_memory
+    
+    with open(os.path.join(dataset.model_path, "training_statistics.json"), "w") as f:
+        json.dump(stats_to_save, f, indent=4)
 
-    if use_rl_densification:
-        torch.save(gaussians.rl_controller.capture(), os.path.join(dataset.model_path, "rl_controller.pth"))
-
-    with open(os.path.join(dataset.model_path, "time_and_count.txt"), 'w') as file:
-        file.write(f"Gaussian number: {gaussians._xyz.shape[0]}\n")
-        file.write(f"Training time: {total_time}\n")
-        file.write(f"Peak Memory: {peak_memory} MB\n")
-
-    # scene.save(iteration)
-    print(f"Gaussian number: {gaussians._xyz.shape[0]}")
-    print(f"Training time: {total_time}")
-    print(f"Peak Memory: {peak_memory} MB")
     
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -493,6 +438,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+            tb_writer.add_histogram("scene/scaling_histogram", scene.gaussians.get_scaling, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 
@@ -514,7 +460,6 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--websockets", action='store_true', default=False)
     parser.add_argument("--benchmark_dir", type=str, default=None)
-    parser.add_argument("--use_rl_densification", action='store_true', default=False)
     parser.add_argument("--rl_controller_path", type=str, default=None)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -523,13 +468,6 @@ if __name__ == "__main__":
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
-
-    # if args.use_rl_densification:
-    #     # 备份代码到output dir
-    #     try:
-    #         saveRuntimeCode(os.path.join(args.model_path, 'backup'))
-    #     except Exception as e:
-    #         print(f"保存代码失败，原因: {e}")
 
     if(args.websockets):
         network_gui_ws.init(args.ip, args.port)
@@ -545,7 +483,6 @@ if __name__ == "__main__":
         args.start_checkpoint, 
         args.debug_from, 
         args.websockets,
-        args.use_rl_densification,
         args.rl_controller_path
     )
 
