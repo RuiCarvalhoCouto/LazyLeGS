@@ -32,7 +32,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-from utils.fast_utils import compute_gaussian_score_fastgs, sampling_cameras
+from utils.camera_utils import sampling_cameras
 from utils.rl_utils import get_metric_score, get_gaussians_state_for_rl
 from utils.general_utils import cosine_annealing
 
@@ -239,7 +239,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                camlist = sampling_cameras(my_viewpoint_stack)
+                camlist = sampling_cameras(my_viewpoint_stack.copy())
 
                 densify_executed = True
                 densify_start.record()

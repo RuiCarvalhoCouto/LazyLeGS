@@ -75,7 +75,8 @@ class GaussianModel:
         self.rl_controller = None
         # 用于追踪稠密化后点和原点的映射关系
         self.parent_mapping = None
-        self.rl_controller = GaussianDensificationController(training_args=training_args, device="cuda")
+        if training_args is not None:
+            self.rl_controller = GaussianDensificationController(training_args=training_args, device="cuda")
 
         self.setup_functions()
 

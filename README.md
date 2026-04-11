@@ -37,6 +37,7 @@ SET DISTUTILS_USE_SDK=1
 # Create and activate environment
 conda env create --file environment.yml
 conda activate LeGS
+pip install submodules/diff-gaussian-rasterization_fastgs submodules/simple-knn submodules/fused-ssim --no-build-isolation
 ```
 
 ### 📂 Dataset Organization

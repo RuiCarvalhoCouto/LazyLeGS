@@ -8,13 +8,27 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+import random
+import numpy as np
 
 from scene.cameras import Camera
-import numpy as np
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
 
 WARNED = False
+
+
+def sampling_cameras(my_viewpoint_stack):
+    ''' Randomly sample a given number of cameras from the viewpoint stack'''
+
+    num_cams = 10
+    camlist = []
+    for _ in range(num_cams):
+        loc = random.randint(0, len(my_viewpoint_stack) - 1)
+        camlist.append(my_viewpoint_stack.pop(loc))
+    
+    return camlist
+
 
 def loadCam(args, id, cam_info, resolution_scale):
     orig_w, orig_h = cam_info.image.size

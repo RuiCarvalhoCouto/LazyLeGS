@@ -46,8 +46,7 @@ def get_metric_score(camlist, gaussians, pipe, bg, opt):
             gs_weights += accum_gs_weight
 
     visible_mask = gs_weights > 0
-    #! 是否要平均
-    # metric_score /= len(camlist)
+    metric_score /= len(camlist)
     metric_score = sign_log1p(metric_score).clamp(min=-6.0, max=6.0)
     return metric_score, visible_mask
 
@@ -104,6 +103,7 @@ def get_gaussians_state_for_rl(camlist, gaussians, pipe, bg, opt):
 
     visible_mask = gs_weights > 0
 
+    metric_score /= len(camlist)
     metric_score = sign_log1p(metric_score)
     metric_score_feature = metric_score.clone().detach().unsqueeze(-1)
     metric_score_feature = normalize_features(metric_score_feature)
