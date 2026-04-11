@@ -99,7 +99,6 @@ class OptimizationParams(ParamGroup):
         self.prune_interval = 3000
         self.densify_prune_ratio = 0.45
         self.after_densify_prune_ratio = 0.01
-        self.dynamic_reset_opacity = False
         
         # fastgs parameters
         self.loss_thresh = 0.1
@@ -128,9 +127,10 @@ class OptimizationParams(ParamGroup):
         self.delay_iter_for_reward = 50
 
         self.rl_use_my_value = True
-        self.use_delete_action = False
+        self.use_delete_action = True
         self.use_prune_estimator = True
         self.rl_inference_only = False
+        self.dynamic_reset_opacity = False
         self.rl_reward_norm = True
         self.rl_use_mixed_precision = True
         self.verbose = False
@@ -141,7 +141,7 @@ class OptimizationParams(ParamGroup):
         self.rl_net_hidden_dim = 64
         self.rl_rollout_batch_size = 1
         self.rl_mini_batch_size = 1
-        self.rl_chunk_size = 200000
+        self.rl_chunk_size = 500000
         self.rl_gamma = 0.99
         self.rl_gae_lambda = 0.95
         self.rl_policy_clip = 0.2
