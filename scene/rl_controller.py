@@ -65,7 +65,7 @@ class PPOActor(nn.Module):
         nn.init.zeros_(self.mlp[-1].bias)
         # 抑制初始的delete概率，使初始策略更倾向于保留点，避免崩溃
         if self.mlp[-1].bias.shape[0] == 4:
-            self.mlp[-1].bias[-1].data -= 1
+            self.mlp[-1].bias[-1].data -= 2
 
     def forward(self, x, temperature=1.0):
         logits = self.mlp(x) / temperature
