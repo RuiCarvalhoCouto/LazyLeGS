@@ -233,11 +233,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-
                 camlist = sampling_cameras(my_viewpoint_stack)
-                # 每2个迭代步更新一次相机列表
-                # if camlist is None or iteration % (opt.densification_interval * 2) == 0:
-                #     camlist = sampling_cameras(my_viewpoint_stack)
 
                 densify_executed = True
                 densify_start.record()

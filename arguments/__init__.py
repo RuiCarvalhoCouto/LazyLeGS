@@ -127,7 +127,7 @@ class OptimizationParams(ParamGroup):
         self.delay_iter_for_reward = 50
 
         self.rl_use_my_value = True
-        self.use_delete_action = True
+        self.use_delete_action = False
         self.use_prune_estimator = True
         self.rl_inference_only = False
         self.dynamic_reset_opacity = False
@@ -139,14 +139,14 @@ class OptimizationParams(ParamGroup):
 
         self.rl_state_dim = 11
         self.rl_net_hidden_dim = 64
-        self.rl_rollout_batch_size = 1
+        self.rl_rollout_batch_size = 2
+        self.ppo_n_epochs = 2
         self.rl_mini_batch_size = 1
         self.rl_chunk_size = 500000
         self.rl_gamma = 0.99
         self.rl_gae_lambda = 0.95
         self.rl_policy_clip = 0.2
         self.metric_map_ssim_lambda = 0.2
-        self.ppo_n_epochs = 1
         self.entropy_loss_init = 0
         self.entropy_loss_final = 0
         self.my_min_opacity_init = 0.005
