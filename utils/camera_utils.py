@@ -18,14 +18,11 @@ from utils.graphics_utils import fov2focal
 WARNED = False
 
 
-def sampling_cameras(my_viewpoint_stack):
+def sampling_cameras(my_viewpoint_stack, num_cams=10):
     ''' Randomly sample a given number of cameras from the viewpoint stack'''
 
-    num_cams = 10
-    camlist = []
-    for _ in range(num_cams):
-        loc = random.randint(0, len(my_viewpoint_stack) - 1)
-        camlist.append(my_viewpoint_stack.pop(loc))
+    loc = random.sample(range(len(my_viewpoint_stack)), num_cams)
+    camlist = [my_viewpoint_stack[l] for l in loc]
     
     return camlist
 

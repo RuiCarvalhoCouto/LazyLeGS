@@ -95,13 +95,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_stack = scene.getTrainCameras().copy()
     viewpoint_indices = list(range(len(viewpoint_stack)))
 
-    if opt.use_validate_cam_list:
-        validate_viewpoints = []
-        for _ in range(10):
-            rand_idx = randint(0, len(viewpoint_indices) - 1)
-            validate_viewpoints.append(viewpoint_stack.pop(rand_idx))
-            _ = viewpoint_indices.pop(rand_idx)
-
     # record time
     optim_start = torch.cuda.Event(enable_timing=True)
     optim_end = torch.cuda.Event(enable_timing=True)
@@ -142,6 +135,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     img_num = -1
 
     my_viewpoint_stack = scene.getTrainCameras().copy()
+    camlist = None
 
     for iteration in range(first_iter, opt.iterations + 1):
         densify_executed = False
@@ -239,7 +233,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
             if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                camlist = sampling_cameras(my_viewpoint_stack.copy())
+
+                camlist = sampling_cameras(my_viewpoint_stack)
+                # 每2个迭代步更新一次相机列表
+                # if camlist is None or iteration % (opt.densification_interval * 2) == 0:
+                #     camlist = sampling_cameras(my_viewpoint_stack)
 
                 densify_executed = True
                 densify_start.record()
