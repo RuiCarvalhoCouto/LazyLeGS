@@ -10,8 +10,9 @@
 
 ## 🚀 What is LeGS?
 
-LeGS is a **learnable density control paradigm** for 3D Gaussian Splatting training:
-- **⚡ High fidelity**: Comparable rendering quality with SOTA methods
+LeGS is a **learnable framework** to density control for 3D Gaussian Splatting training:
+- **📑 Learnable Density Control**: Control the scene density using an RL network to optimize rendering quality.
+- **⚡ High fidelity**:  Significantly improves rendering quality with comparable training time.
 - **🎯 Easy Integration**: Seamlessly integrates with various backbones (Vanilla 3DGS, FastGS, etc.)
 
 ## 📢 Latest Updates
