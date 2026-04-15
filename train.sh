@@ -23,8 +23,8 @@ echo "tanksandtemples耗时: $((end - start)) s"
 
 echo "db开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
 start=$(date +%s)
-OAR_JOB_ID=drjohnson python train.py -s /data2/ningzhh/data/db/drjohnson -m output/rl/drjohnson --eval --densification_interval 100  --optimizer_type default  --highfeature_lr 0.0025 --lowfeature_lr 0.0005 --grad_abs_thresh 0.0001 --mult 0.7
-OAR_JOB_ID=playroom python train.py -s /data2/ningzhh/data/db/playroom -m output/rl/playroom --eval --densification_interval 100  --optimizer_type default  --highfeature_lr 0.0015 --grad_abs_thresh 0.0001 --mult 0.7
+OAR_JOB_ID=drjohnson python train.py -s /data2/ningzhh/data/db/drjohnson -m output/rl/drjohnson --eval --densification_interval 100  --optimizer_type default  --highfeature_lr 0.0025 --lowfeature_lr 0.0005 --grad_abs_thresh 0.0002 --mult 0.7
+OAR_JOB_ID=playroom python train.py -s /data2/ningzhh/data/db/playroom -m output/rl/playroom --eval --densification_interval 100  --optimizer_type default  --highfeature_lr 0.0015 --grad_abs_thresh 0.0002 --mult 0.7
 end=$(date +%s)
 echo "db结束时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "db耗时: $((end - start)) s"
@@ -57,16 +57,16 @@ python metrics.py -m output/rl/kitchen
 python render.py -m output/rl/bonsai --skip_train
 python metrics.py -m output/rl/bonsai
 
-# python render.py -m output/rl/truck --skip_train --mult 0.7
-# python metrics.py -m output/rl/truck
+python render.py -m output/rl/truck --skip_train --mult 0.7
+python metrics.py -m output/rl/truck
 
-# python render.py -m output/rl/train --skip_train --mult 0.7
-# python metrics.py -m output/rl/train
+python render.py -m output/rl/train --skip_train --mult 0.7
+python metrics.py -m output/rl/train
 
-# python render.py -m output/rl/drjohnson --skip_train --mult 0.7
-# python metrics.py -m output/rl/drjohnson
+python render.py -m output/rl/drjohnson --skip_train --mult 0.7
+python metrics.py -m output/rl/drjohnson
 
-# python render.py -m output/rl/playroom --skip_train --mult 0.7
-# python metrics.py -m output/rl/playroom
+python render.py -m output/rl/playroom --skip_train --mult 0.7
+python metrics.py -m output/rl/playroom
 
-python tmp.py
+python report_results.py
