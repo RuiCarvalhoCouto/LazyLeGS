@@ -492,6 +492,8 @@ class GaussianModel:
         grad_qualifiers = torch.where(torch.norm(grad_vars, dim=-1) >= args.grad_thresh, True, False)
         grad_qualifiers_abs = torch.where(torch.norm(grads_abs, dim=-1) >= args.grad_abs_thresh, True, False)
 
+        # We inherit a simple gradient threshold strategy to reduce unnecessary computation and memory consumption,
+        # and to control the total number of points, but all decisions are still made by the RL network.
         valid_mask = torch.logical_or(grad_qualifiers, grad_qualifiers_abs)
         if self.training_args.verbose:
             print(f"n grad qualifiers points: {valid_mask.sum().item() / curr_n_points:.4f}")
