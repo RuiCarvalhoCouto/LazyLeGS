@@ -16,7 +16,7 @@ LeGS is a **learnable framework** to density control for 3D Gaussian Splatting t
 - **🎯 Easy Integration**: Seamlessly integrates with various backbones (Vanilla 3DGS, FastGS, etc.)
 
 ## 📢 Latest Updates
-#### 🔥 **[2026.xx.xx]** Code Released - Get Started Now! 🚀
+#### 🔥 **[2026.05.01]** Code Released - Get Started Now! 🚀
 
 ## 🚀 Quick Start
 
@@ -73,7 +73,6 @@ bash train.sh
 
 <details>
 <summary><span style="font-weight: bold;">📋 Advanced: Command Line Arguments for train.py</span></summary>
-
   #### --grad_abs_thresh 
   Absolute gradient (same as Abs-GS) threshold for density control.
   #### --grad_thresh
