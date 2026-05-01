@@ -63,8 +63,6 @@ The MipNeRF360 scenes are hosted by the paper authors [here](https://jonbarron.i
 
 ## 🎯 Training & Evaluation
 
-### LeGS (Standard)
-
 Remember to modify the script to point to your dataset directory:
 
 ```bash
