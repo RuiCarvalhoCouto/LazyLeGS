@@ -1,6 +1,6 @@
 <div align="center">
 <h1>Beyond Heuristics: Learnable Density Control for 3D Gaussian Splatting</h1> 
-<h2>ICML 2026</h2> 
+<h2>ICML 2026 <a href="https://arxiv.org/abs/2605.00408">[arXiv]</a> </h2> 
 
 </div>
 
@@ -174,7 +174,15 @@ This project is built upon [FastGS](https://github.com/fastgs/FastGS/tree/main).
 ## Citation
 If you find this repo useful, please cite:
 ```
-
+@misc{ning2026heuristicslearnabledensitycontrol,
+      title={Beyond Heuristics: Learnable Density Control for 3D Gaussian Splatting}, 
+      author={Zhenhua Ning and Xin Li and Jun Yu and Guangming Lu and Yaowei Wang and Wenjie Pei},
+      year={2026},
+      eprint={2605.00408},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2605.00408}, 
+}
 ```
 
 ---
