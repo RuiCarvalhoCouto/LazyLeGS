@@ -27,9 +27,7 @@ def sampling_cameras(my_viewpoint_stack, num_cams=10):
     return camlist
 
 
-def loadCam(args, id, cam_info, resolution_scale):
-    orig_w, orig_h = cam_info.image.size
-
+def _target_resolution(args, orig_w, orig_h, resolution_scale):
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
     else:  # should be a type that converts to float
@@ -49,12 +47,31 @@ def loadCam(args, id, cam_info, resolution_scale):
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
+    return resolution
+
+
+def loadCam(args, id, cam_info, resolution_scale, image_cache=None, lazy_images=False):
+    if lazy_images:
+        orig_w, orig_h = cam_info.width, cam_info.height
+    else:
+        orig_w, orig_h = cam_info.image.size
+
+    resolution = _target_resolution(args, orig_w, orig_h, resolution_scale)
+
+    if lazy_images:
+        return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T,
+                      FoVx=cam_info.FovX, FoVy=cam_info.FovY,
+                      image=None, gt_alpha_mask=None,
+                      image_name=cam_info.image_name, uid=id, data_device=args.data_device,
+                      image_path=cam_info.image_path, image_resolution=resolution,
+                      image_cache=image_cache, lazy_images=True)
+
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
 
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
 
-    if resized_image_rgb.shape[1] == 4:
+    if resized_image_rgb.shape[0] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
 
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
@@ -62,11 +79,11 @@ def loadCam(args, id, cam_info, resolution_scale):
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device)
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args):
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, image_cache=None, lazy_images=False):
     camera_list = []
 
     for id, c in enumerate(cam_infos):
-        camera_list.append(loadCam(args, id, c, resolution_scale))
+        camera_list.append(loadCam(args, id, c, resolution_scale, image_cache=image_cache, lazy_images=lazy_images))
 
     return camera_list
 

@@ -6,8 +6,8 @@ The goal is to keep one standard LeGS / 3DGS Gaussian model and standard viewer-
 
 ## Current Focus
 
-- Preserve upstream LeGS / FastGS training behavior by default.
-- Add lazy image loading for large COLMAP datasets.
+- Preserve upstream LeGS / FastGS training behavior when `--no_lazy_images` is passed.
+- Use lazy image loading by default for large COLMAP datasets.
 - Load image tensors on demand during training and evaluation.
 - Keep a bounded CPU cache of preprocessed images.
 - Preserve vanilla 3DGS-compatible outputs, including `point_cloud.ply`.
@@ -53,14 +53,19 @@ Call `train.py` directly with your dataset path:
 python train.py -s /path/to/dataset -m output/my_scene
 ```
 
-For large datasets, use CPU image storage until lazy image loading is available:
+For large COLMAP datasets, lazy image loading is enabled by default. Use a bounded CPU cache for preprocessed images:
 
 ```bash
-python train.py -s /path/to/dataset -m output/my_scene --data_device cpu
+python train.py -s /path/to/dataset -m output/my_scene --data_device cpu --image_cache_size 32
 ```
 
-`--no_lazy_images` disables lazy image loading and renables original LeGS behavior.
-`--image_cache_size 0` is intended to disable retained CPU image caching while still loading images on demand. Default is 32.
+Disable retained CPU image caching while keeping lazy loading enabled:
+
+```bash
+python train.py -s /path/to/dataset -m output/my_scene --image_cache_size 0
+```
+
+Pass `--no_lazy_images` to restore the original eager image loading behavior.
 
 ## Evaluation and Rendering
 

@@ -16,6 +16,7 @@ from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from scene.rl_controller import GaussianDensificationController
+from scene.cameras import ImageTensorCache
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
@@ -40,9 +41,18 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
+        self.image_cache = None
+        lazy_images = False
 
         if os.path.exists(os.path.join(args.source_path, "sparse")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+            lazy_images = not getattr(args, "no_lazy_images", False)
+            image_cache_size = getattr(args, "image_cache_size", 32)
+            if image_cache_size < 0:
+                raise ValueError("--image_cache_size must be >= 0")
+            if lazy_images:
+                self.image_cache = ImageTensorCache(image_cache_size)
+                print(f"Lazy image loading enabled. CPU image cache size: {image_cache_size}")
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, load_images=not lazy_images)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
@@ -71,9 +81,9 @@ class Scene:
 
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, image_cache=self.image_cache, lazy_images=lazy_images)
             print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, image_cache=self.image_cache, lazy_images=lazy_images)
 
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,

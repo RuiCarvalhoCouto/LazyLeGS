@@ -82,8 +82,8 @@ The desired behavior is optional lazy / streamed image loading:
 
 When implementing or modifying lazy image loading:
 
-* Add new behavior behind explicit CLI flags such as `--lazy_images` and `--image_cache_size`.
-* Default behavior must remain unchanged when `--lazy_images` is not passed.
+* Add new behavior behind explicit CLI flags such as `--no_lazy_images` and `--image_cache_size`.
+* Default behavior must remain unchanged when `--no_lazy_images` is passed.
 * In lazy mode, do not convert and retain all images as tensors during `Scene` initialization.
 * Store image paths, image names, target resolution, camera intrinsics/extrinsics, and required dimensions instead of storing all image tensors.
 * Load the selected camera image on demand when training/evaluation needs it.
@@ -166,9 +166,9 @@ output/
 * Test both modes:
 
 ```text
-without --lazy_images
-with --lazy_images --image_cache_size 0
-with --lazy_images --image_cache_size 32 or 64
+with --no_lazy_images
+with --image_cache_size 0
+with --image_cache_size 32 or 64
 ```
 
 * For renderer changes, compare rendered output shape, value ranges, determinism expectations, and metric scripts.
