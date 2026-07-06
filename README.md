@@ -90,7 +90,7 @@ output/
 This fork is based on:
 
 - LeGS: [Beyond Heuristics: Learnable Density Control for 3D Gaussian Splatting](https://github.com/AaronNZH/LeGS)
-- FastGS: [FastGS](https://github.com/fastgs/FastGS/tree/main)
+- FastGS: [FastGS](https://github.com/fastgs/FastGS)
 - Vanilla 3DGS: [3D Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting)
 
 Please follow the licenses and citation requirements of the upstream projects.
