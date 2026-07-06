@@ -44,6 +44,8 @@ To do that:
 
 After that setup, clone this fork recursively, then create the Conda environment manually:
 
+There is intentionally no `environment.yml` file in this fork right now; setup is documented through explicit manual Conda and pip commands.
+
 ```bash
 # Windows only
 set DISTUTILS_USE_SDK=1

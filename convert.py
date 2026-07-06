@@ -36,9 +36,31 @@ use_gpu = 1 if not args.no_gpu else 0
 def run_checked(command, failure_message):
     try:
         subprocess.run(command, check=True)
+    except OSError as e:
+        logging.error(f"{failure_message} could not start: {e}. Exiting.")
+        raise SystemExit(1)
     except subprocess.CalledProcessError as e:
         logging.error(f"{failure_message} failed with code {e.returncode}. Exiting.")
         raise SystemExit(e.returncode)
+
+
+def normalize_sparse_output(sparse_path):
+    sparse_zero_path = sparse_path / "0"
+    os.makedirs(sparse_zero_path, exist_ok=True)
+
+    expected_files = {
+        "cameras.bin", "images.bin", "points3D.bin",
+        "cameras.txt", "images.txt", "points3D.txt",
+    }
+
+    for filename in expected_files:
+        source_file = sparse_path / filename
+        if not source_file.is_file():
+            continue
+        destination_file = sparse_zero_path / filename
+        if destination_file.exists():
+            continue
+        shutil.move(source_file, destination_file)
 
 
 if not args.skip_matching:
@@ -82,15 +104,7 @@ run_checked([
     "--output_type", "COLMAP",
 ], "Image undistortion")
 
-files = os.listdir(source_path / "sparse")
-os.makedirs(source_path / "sparse" / "0", exist_ok=True)
-# Copy each file from the source directory to the destination directory.
-for file in files:
-    if file == "0":
-        continue
-    source_file = source_path / "sparse" / file
-    destination_file = source_path / "sparse" / "0" / file
-    shutil.move(source_file, destination_file)
+normalize_sparse_output(source_path / "sparse")
 
 if args.resize:
     print("Copying and resizing...")

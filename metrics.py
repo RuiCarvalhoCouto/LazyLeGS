@@ -26,10 +26,9 @@ def readImages(renders_dir, gt_dir):
     gts = []
     image_names = []
     for fname in os.listdir(renders_dir):
-        render = Image.open(renders_dir / fname)
-        gt = Image.open(gt_dir / fname)
-        renders.append(tf.to_tensor(render).unsqueeze(0)[:, :3, :, :].cuda())
-        gts.append(tf.to_tensor(gt).unsqueeze(0)[:, :3, :, :].cuda())
+        with Image.open(renders_dir / fname) as render, Image.open(gt_dir / fname) as gt:
+            renders.append(tf.to_tensor(render).unsqueeze(0)[:, :3, :, :].cuda())
+            gts.append(tf.to_tensor(gt).unsqueeze(0)[:, :3, :, :].cuda())
         image_names.append(fname)
     return renders, gts, image_names
 

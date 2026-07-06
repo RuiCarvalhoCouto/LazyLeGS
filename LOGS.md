@@ -63,3 +63,18 @@
   The repository instructions needed to be rebuilt around the implemented LazyLeGS behavior rather than the earlier future-work framing.
 
 <br>
+
+- Files changed:
+  - README.md
+  - scene/dataset_readers.py
+  - metrics.py
+  - convert.py
+  - full_eval.py
+  - TODO.md
+  - LOGS.md
+- Summary:
+  Clarified that setup is currently documented through manual Conda and pip commands rather than `environment.yml`, closed PIL image handles in eager dataset and metrics paths, hardened `convert.py` subprocess and sparse-output handling, anchored `full_eval.py` helper script paths, and recorded inactive full-evaluation flags as future work.
+- Reason:
+  Follow-up review found setup documentation drift, remaining file-handle hygiene issues, fragile conversion rerun behavior, relative helper script paths, and parsed evaluation flags that should not be wired in this cleanup pass.
+
+<br>

@@ -15,6 +15,9 @@ import subprocess
 import sys
 import time
 from argparse import ArgumentParser
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent
 
 mipnerf360_outdoor_scenes = ["bicycle", "flowers", "garden", "stump", "treehill"]
 mipnerf360_indoor_scenes = ["room", "counter", "kitchen", "bonsai"]
@@ -104,25 +107,25 @@ if not args.skip_training:
         if scene in mipnerf360_outdoor_scenes:
             source = os.path.join(args.mipnerf360, scene)
             scene_args = current_common_args + grad_thresh_args
-            cmd = [sys.executable, "train.py", "-s", source, "-i", "images_4", "-m", os.path.join(args.output_path, scene)]
+            cmd = [sys.executable, str(REPO_ROOT / "train.py"), "-s", source, "-i", "images_4", "-m", os.path.join(args.output_path, scene)]
             cmd += scene_args + shlex.split(special_args[scene])
 
         if scene in mipnerf360_indoor_scenes:
             source = os.path.join(args.mipnerf360, scene)
             scene_args = current_common_args + grad_thresh_args
-            cmd = [sys.executable, "train.py", "-s", source, "-i", "images_2", "-m", os.path.join(args.output_path, scene)]
+            cmd = [sys.executable, str(REPO_ROOT / "train.py"), "-s", source, "-i", "images_2", "-m", os.path.join(args.output_path, scene)]
             cmd += scene_args + shlex.split(special_args[scene])
 
         if scene in tanks_and_temples_scenes:
             source = os.path.join(args.tanksandtemples, scene)
             scene_args = current_common_args + grad_thresh_args
-            cmd = [sys.executable, "train.py", "-s", source, "-m", os.path.join(args.output_path, scene)]
+            cmd = [sys.executable, str(REPO_ROOT / "train.py"), "-s", source, "-m", os.path.join(args.output_path, scene)]
             cmd += scene_args + shlex.split(special_args[scene]) + ["--mult", "0.7"]
 
         if scene in deep_blending_scenes:
             source = os.path.join(args.deepblending, scene)
             scene_args = current_common_args + grad_thresh_args
-            cmd = [sys.executable, "train.py", "-s", source, "-m", os.path.join(args.output_path, scene)]
+            cmd = [sys.executable, str(REPO_ROOT / "train.py"), "-s", source, "-m", os.path.join(args.output_path, scene)]
             cmd += scene_args + shlex.split(special_args[scene]) + ["--mult", "0.7"]
 
         run_cmd(cmd, args)
@@ -148,7 +151,7 @@ if not args.dry_run:
 if not args.skip_rendering:
     for scene in all_scenes:
         output_path = os.path.join(args.output_path, scene)
-        cmd = [sys.executable, "render.py", "-m", output_path, "--skip_train"]
+        cmd = [sys.executable, str(REPO_ROOT / "render.py"), "-m", output_path, "--skip_train"]
         if scene in tanks_and_temples_scenes or scene in deep_blending_scenes:
             cmd += ["--mult", "0.7"]
         run_cmd(cmd, args)
@@ -156,5 +159,5 @@ if not args.skip_rendering:
 if not args.skip_metrics:
     for scene in all_scenes:
         output_path = os.path.join(args.output_path, scene)
-        cmd = [sys.executable, "metrics.py", "-m", output_path]
+        cmd = [sys.executable, str(REPO_ROOT / "metrics.py"), "-m", output_path]
         run_cmd(cmd, args)
