@@ -48,6 +48,9 @@ After that setup, clone this fork recursively, then create the Conda environment
 # Windows only
 set DISTUTILS_USE_SDK=1
 
+# Make sure Conda is clean
+conda clean --all 
+
 git clone https://github.com/RuiCarvalhoCouto/LazyLeGS.git --recursive
 cd LazyLeGS
 
