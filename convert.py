@@ -25,12 +25,17 @@ parser.add_argument("--camera", default="OPENCV", type=str)
 parser.add_argument("--colmap_executable", default="", type=str)
 parser.add_argument("--resize", action="store_true")
 parser.add_argument("--magick_executable", default="", type=str)
+parser.add_argument("--max_num_matches", default=32768, type=int,
+                    help="COLMAP SiftMatching.max_num_matches value. Increase this if COLMAP clamps many features during matching.")
 args = parser.parse_args()
 
 source_path = Path(args.source_path)
 colmap_command = args.colmap_executable if len(args.colmap_executable) > 0 else "colmap"
 magick_command = args.magick_executable if len(args.magick_executable) > 0 else "magick"
 use_gpu = 1 if not args.no_gpu else 0
+
+if args.max_num_matches <= 0:
+    parser.error("--max_num_matches must be > 0")
 
 
 def run_checked(command, failure_message):
@@ -81,6 +86,7 @@ if not args.skip_matching:
         colmap_command, "exhaustive_matcher",
         "--database_path", str(source_path / "distorted" / "database.db"),
         "--SiftMatching.use_gpu", str(use_gpu),
+        "--SiftMatching.max_num_matches", str(args.max_num_matches),
     ], "Feature matching")
 
     ### Bundle adjustment

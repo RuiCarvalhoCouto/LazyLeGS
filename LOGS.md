@@ -78,3 +78,13 @@
   Follow-up review found setup documentation drift, remaining file-handle hygiene issues, fragile conversion rerun behavior, relative helper script paths, and parsed evaluation flags that should not be wired in this cleanup pass.
 
 <br>
+
+- Files changed:
+  - convert.py
+  - LOGS.md
+- Summary:
+  Added a `--max_num_matches` option to `convert.py` and passed it through to COLMAP as `--SiftMatching.max_num_matches`, with positive-value validation and a higher default of 32768.
+- Reason:
+  COLMAP matching can clamp large feature sets to its maximum match count, reducing usable features on high-detail datasets unless the matching limit is raised.
+
+<br>
