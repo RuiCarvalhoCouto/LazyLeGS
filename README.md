@@ -42,26 +42,36 @@ To do that:
 6. Run `call <insert your path here>` to activate "cl.exe".
 7. Verify CUDA and "cl.exe" by running `where cl && nvcc --version`.
 
-After that setup, clone this fork recursively, then create the Conda environment:
-
-```bash
-git clone https://github.com/RuiCarvalhoCouto/LazyLeGS.git --recursive
-cd LazyLeGS
-
-conda env create --file environment.yml
-conda activate lazylegs
-```
-
-Build the local CUDA extensions after activating the environment. On Windows, run this from a Developer Command Prompt or a shell where the Visual Studio C++ tools and CUDA 11.8 toolkit are available:
+After that setup, clone this fork recursively, then create the Conda environment manually:
 
 ```bash
 # Windows only
-SET DISTUTILS_USE_SDK=1
+set DISTUTILS_USE_SDK=1
 
+git clone https://github.com/RuiCarvalhoCouto/LazyLeGS.git --recursive
+cd LazyLeGS
+
+conda create -n lazylegs python=3.8 -y 
+conda activate lazylegs
+```
+
+Then install all the required Conda packages:
+```bash
+conda install -y -c pytorch -c nvidia pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.8
+conda install -y -c conda-forge ffmpeg=4.2.2 pillow=10.2.0 pip=23.3.1 typing_extensions=4.9.0
+```
+
+After that, install all `pip` packages:
+```bash
+python -m pip install numpy==1.24.4 scipy==1.10.1 tqdm==4.66.2 plyfile==0.8.1 opencv-python==4.8.1.78 imageio==2.34.0 scikit-image==0.21.0 matplotlib==3.7.5 tensorboard==2.14.0 lpips==0.1.4 websockets==12.0
+```
+
+And, finally, install the submodules:
+```bash
 python -m pip install -v submodules/diff-gaussian-rasterization_fastgs submodules/simple-knn submodules/fused-ssim --no-build-isolation
 ```
 
-COLMAP is optional for this repository when your dataset is already converted and undistorted. Install COLMAP separately only if you need to run `convert.py`.
+COLMAP is optional for this repository when your dataset is already converted and undistorted. Install COLMAP separately only if you need to run `convert.py`. Install it with `conda install -c colmap -y`.
 
 ## Training
 

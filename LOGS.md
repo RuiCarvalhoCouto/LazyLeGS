@@ -35,3 +35,13 @@
   The previous environment file contained duplicate and unrelated packages, hard-pinned build strings, mirror channels, Python 3.9, Torch 2.8, and CUDA 12.8 packages, which did not match the README target stack and made environment creation unreliable.
 
 <br>
+
+- Files changed:
+  - convert.py
+  - full_eval.py
+- Summary:
+  Replaced shell-string command execution with `subprocess.run([...], check=True)` argument lists for COLMAP, ImageMagick, training, rendering, and metrics helper commands.
+- Reason:
+  Paths containing spaces were being split by the shell when scripts built command strings with unquoted path values.
+
+<br>
