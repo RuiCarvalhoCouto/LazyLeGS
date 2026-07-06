@@ -45,3 +45,21 @@
   Paths containing spaces were being split by the shell when scripts built command strings with unquoted path values.
 
 <br>
+
+- Files changed:
+  - AGENTS.md
+- Summary:
+  Updated repository agent instructions to describe the current default-on COLMAP lazy image loading behavior, `--no_lazy_images` compatibility mode, bounded CPU image cache rules, subprocess-safe path handling, and current Windows setup guidance.
+- Reason:
+  The previous instructions still described lazy image loading as a future implementation target and did not reflect the path-handling and setup changes already made in the repository.
+
+<br>
+
+- Files changed:
+  - AGENTS.md
+- Summary:
+  Recreated repository agent instructions from the current codebase, including default-on COLMAP lazy loading, bounded CPU cache behavior, path-safe subprocess rules, setup expectations, output compatibility, testing guidance, and required logging policy.
+- Reason:
+  The repository instructions needed to be rebuilt around the implemented LazyLeGS behavior rather than the earlier future-work framing.
+
+<br>
