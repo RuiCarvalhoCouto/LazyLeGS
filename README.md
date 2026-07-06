@@ -47,7 +47,7 @@ pip install submodules/diff-gaussian-rasterization_fastgs submodules/simple-knn 
 
 ## Training
 
-Update `train.sh` or call `train.py` directly with your dataset path:
+Call `train.py` directly with your dataset path:
 
 ```bash
 python train.py -s /path/to/dataset -m output/my_scene
