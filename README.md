@@ -31,26 +31,37 @@ Some COLMAP workflows also include `distorted/`, `stereo/`, and helper scripts. 
 
 ## Setup
 
-Clone this fork recursively, then create the Conda environment:
+If done on Windows, I recommend running all the following commands under an Anaconda prompt, while Visual Studio C++ tools are activated.
+
+To do that: 
+1. Install the CUDA 11.8 toolkit (if you have any other version of CUDA, make sure 11.8 shows up first on PATH). 
+2. Install Miniconda (check [Miniconda Dowloads](https://www.anaconda.com/download/success) or [Miniconda Install Guide](https://docs.conda.io/projects/conda/en/latest/user-guide/install/windows.html) for more information).
+3. Install Visual Studio Community 2022 (check [Visual Studio Older Downloads](https://visualstudio.microsoft.com/vs/older-downloads//) for more information). On the Visual Studio Installer, make sure to have "Desktop development with C++" installed, as well as "MSVC v143 - VS 2022 C++ x64/x86 build tools (v14.39-17.9)" in the Individual Components tab.
+4. Open an Anaconda prompt.
+5. Find "vcvars64.bat" by running `where /r "%ProgramFiles%\Microsoft Visual Studio\2022\Community" vcvars64.bat` and copy that path.
+6. Run `call <insert your path here>` to activate "cl.exe".
+7. Verify CUDA and "cl.exe" by running `where cl && nvcc --version`.
+
+After that setup, clone this fork recursively, then create the Conda environment:
 
 ```bash
 git clone https://github.com/RuiCarvalhoCouto/LazyLeGS.git --recursive
 cd LazyLeGS
 
-# Windows only
-SET DISTUTILS_USE_SDK=1
-
-conda create -n lazylegs python=3.8 -y
-# Optionally (not recommended), you can try to run the following instead: conda env create --file environment.yml
-
+conda env create --file environment.yml
 conda activate lazylegs
 ```
 
-If environment was created manually, I recommend installing all dependencies individually:
+Build the local CUDA extensions after activating the environment. On Windows, run this from a Developer Command Prompt or a shell where the Visual Studio C++ tools and CUDA 11.8 toolkit are available:
+
 ```bash
-conda install -y -c pytorch -c nvidia -c conda-forge pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.8 ffmpeg=4.2.2 pillow=10.2.0 pip=23.3.1 typing_extensions=4.9.0 colmap
-python -m pip install numpy==1.24.4 scipy==1.10.1 tqdm==4.66.2 plyfile==0.8.1 opencv-python==4.8.1.78 imageio==2.34.0 scikit-image==0.21.0 matplotlib==3.7.5 tensorboard==2.14.0 lpips==0.1.4 websockets==12.0 && python -m pip install --no-index torch-scatter -f https://data.pyg.org/whl/torch-2.0.0+cu118.html && python -m pip install -v submodules/diff-gaussian-rasterization_fastgs submodules/simple-knn submodules/fused-ssim --no-build-isolation
+# Windows only
+SET DISTUTILS_USE_SDK=1
+
+python -m pip install -v submodules/diff-gaussian-rasterization_fastgs submodules/simple-knn submodules/fused-ssim --no-build-isolation
 ```
+
+COLMAP is optional for this repository when your dataset is already converted and undistorted. Install COLMAP separately only if you need to run `convert.py`.
 
 ## Training
 
