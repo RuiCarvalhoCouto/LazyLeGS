@@ -60,10 +60,10 @@ Call `train.py` directly with your dataset path:
 python train.py -s /path/to/dataset -m output/my_scene
 ```
 
-For large COLMAP datasets, lazy image loading is enabled by default. Use a bounded CPU cache for preprocessed images:
+For large COLMAP datasets, lazy image loading is enabled by default. Use a bounded CPU cache for preprocessed images (default is on and is 32):
 
 ```bash
-python train.py -s /path/to/dataset -m output/my_scene --data_device cpu --image_cache_size 32
+python train.py -s /path/to/dataset -m output/my_scene --data_device cpu --image_cache_size 64
 ```
 
 Disable retained CPU image caching while keeping lazy loading enabled:
