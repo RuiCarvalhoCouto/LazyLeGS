@@ -88,3 +88,13 @@
   COLMAP matching can clamp large feature sets to its maximum match count, reducing usable features on high-detail datasets unless the matching limit is raised.
 
 <br>
+
+- Files changed:
+  - convert.py
+  - LOGS.md
+- Summary:
+  Added a `--max_num_features` option to `convert.py` and passed it to COLMAP feature extraction as `--SiftExtraction.max_num_features`, with a default of 65536 and positive-value validation.
+- Reason:
+  COLMAP can clamp detected SIFT features during feature extraction before matching starts, so raising only the matching limit does not prevent feature-count clamp warnings.
+
+<br>

@@ -25,14 +25,19 @@ parser.add_argument("--camera", default="OPENCV", type=str)
 parser.add_argument("--colmap_executable", default="", type=str)
 parser.add_argument("--resize", action="store_true")
 parser.add_argument("--magick_executable", default="", type=str)
+parser.add_argument("--max_num_features", default=65536, type=int,
+                    help="COLMAP SiftExtraction.max_num_features value. Increase this if COLMAP clamps detected features during extraction.")
 parser.add_argument("--max_num_matches", default=32768, type=int,
-                    help="COLMAP SiftMatching.max_num_matches value. Increase this if COLMAP clamps many features during matching.")
+                    help="COLMAP SiftMatching.max_num_matches value. Increase this if COLMAP clamps features during matching.")
 args = parser.parse_args()
 
 source_path = Path(args.source_path)
 colmap_command = args.colmap_executable if len(args.colmap_executable) > 0 else "colmap"
 magick_command = args.magick_executable if len(args.magick_executable) > 0 else "magick"
 use_gpu = 1 if not args.no_gpu else 0
+
+if args.max_num_features <= 0:
+    parser.error("--max_num_features must be > 0")
 
 if args.max_num_matches <= 0:
     parser.error("--max_num_matches must be > 0")
@@ -79,6 +84,7 @@ if not args.skip_matching:
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", args.camera,
         "--SiftExtraction.use_gpu", str(use_gpu),
+        "--SiftExtraction.max_num_features", str(args.max_num_features),
     ], "Feature extraction")
 
     ## Feature matching
