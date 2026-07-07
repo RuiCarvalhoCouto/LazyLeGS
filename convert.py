@@ -26,6 +26,10 @@ parser.add_argument("--camera", default="OPENCV", type=str)
 parser.add_argument("--colmap_executable", default="", type=str)
 parser.add_argument("--resize", action="store_true")
 parser.add_argument("--magick_executable", default="", type=str)
+parser.add_argument("--no_gpu_matching", action="store_true",
+                    help="Disable GPU only for feature matching. Useful when OpenGL SiftGPU clamps matches to 16384.")
+parser.add_argument("--force_gpu_matching", action="store_true",
+                    help="Force GPU matching even when the script detects legacy OpenGL SiftGPU options.")
 parser.add_argument("--max_num_features", default=65536, type=int,
                     help="COLMAP SiftExtraction.max_num_features value. Increase this if COLMAP clamps detected features during extraction.")
 parser.add_argument("--max_num_matches", default=32768, type=int,
@@ -35,7 +39,11 @@ args = parser.parse_args()
 source_path = Path(args.source_path)
 colmap_command = args.colmap_executable if len(args.colmap_executable) > 0 else "colmap"
 magick_command = args.magick_executable if len(args.magick_executable) > 0 else "magick"
-use_gpu = 1 if not args.no_gpu else 0
+feature_use_gpu = 1 if not args.no_gpu else 0
+matching_use_gpu = 1 if not args.no_gpu and not args.no_gpu_matching else 0
+
+if args.force_gpu_matching and (args.no_gpu or args.no_gpu_matching):
+    parser.error("--force_gpu_matching cannot be combined with --no_gpu or --no_gpu_matching")
 
 if args.max_num_features <= 0:
     parser.error("--max_num_features must be > 0")
@@ -117,6 +125,19 @@ if not args.skip_matching:
         "exhaustive_matcher",
         ["--FeatureMatching.max_num_matches", "--SiftMatching.max_num_matches"],
     )
+    if (
+        matching_use_gpu_option == "--SiftMatching.use_gpu"
+        and args.max_num_matches > 16384
+        and matching_use_gpu
+        and not args.force_gpu_matching
+    ):
+        print(
+            "[ INFO ] Legacy OpenGL SiftGPU matching is limited to 16384 matches. "
+            "Using CPU feature matching so --max_num_matches can be honored. "
+            "Pass --force_gpu_matching to keep GPU matching anyway.",
+            flush=True,
+        )
+        matching_use_gpu = 0
 
     ## Feature extraction
     run_checked([
@@ -125,7 +146,7 @@ if not args.skip_matching:
         "--image_path", str(source_path / "input"),
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", args.camera,
-        feature_use_gpu_option, str(use_gpu),
+        feature_use_gpu_option, str(feature_use_gpu),
         max_num_features_option, str(args.max_num_features),
     ], "Feature extraction")
 
@@ -133,7 +154,7 @@ if not args.skip_matching:
     run_checked([
         colmap_command, "exhaustive_matcher",
         "--database_path", str(source_path / "distorted" / "database.db"),
-        matching_use_gpu_option, str(use_gpu),
+        matching_use_gpu_option, str(matching_use_gpu),
         max_num_matches_option, str(args.max_num_matches),
     ], "Feature matching")
 

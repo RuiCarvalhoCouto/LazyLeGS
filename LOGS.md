@@ -110,3 +110,13 @@
   Newer COLMAP versions use `FeatureExtraction.*` and `FeatureMatching.*` option namespaces, so passing only older `SiftMatching.max_num_matches` did not raise the active matching limit and feature-clamp warnings could remain at the old default.
 
 <br>
+
+- Files changed:
+  - convert.py
+  - LOGS.md
+- Summary:
+  Added `--no_gpu_matching` and `--force_gpu_matching` to `convert.py`, split feature-extraction GPU use from feature-matching GPU use, and automatically falls back to CPU matching when legacy `SiftMatching.use_gpu` would hit the OpenGL SiftGPU 16384-match limit.
+- Reason:
+  Older COLMAP builds can accept a larger `SiftMatching.max_num_matches` value but still clamp to 16384 when the OpenGL SiftGPU matcher is active, so the matcher must run without GPU to honor larger match limits on those builds.
+
+<br>
