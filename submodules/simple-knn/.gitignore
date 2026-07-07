@@ -1,6 +1,6 @@
 build/
-diff_gaussian_rasterization.egg-info/
 dist/
+simple_knn.egg-info/
 *.pyd
 *.lib
 *.exp

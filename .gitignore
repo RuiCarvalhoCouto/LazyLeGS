@@ -1,1 +1,26 @@
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.egg
+
+# PyTorch/CUDA/C++ extension build artifacts
+*.pyd
+*.so
+*.dll
+*.dylib
+*.lib
+*.exp
+*.obj
+*.o
+*.pdb
+*.ilk
+
+# Ninja build files
+.ninja_log
+.ninja_deps
+build.ninja
