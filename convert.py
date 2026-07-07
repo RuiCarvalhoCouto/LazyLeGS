@@ -11,6 +11,7 @@
 
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 from argparse import ArgumentParser
@@ -28,7 +29,7 @@ parser.add_argument("--magick_executable", default="", type=str)
 parser.add_argument("--max_num_features", default=65536, type=int,
                     help="COLMAP SiftExtraction.max_num_features value. Increase this if COLMAP clamps detected features during extraction.")
 parser.add_argument("--max_num_matches", default=32768, type=int,
-                    help="COLMAP SiftMatching.max_num_matches value. Increase this if COLMAP clamps features during matching.")
+                    help="COLMAP maximum match count. The script maps this to the supported FeatureMatching or SiftMatching option.")
 args = parser.parse_args()
 
 source_path = Path(args.source_path)
@@ -43,8 +44,33 @@ if args.max_num_matches <= 0:
     parser.error("--max_num_matches must be > 0")
 
 
+def supported_colmap_option(command_name, option_names):
+    try:
+        completed = subprocess.run(
+            [colmap_command, command_name, "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as e:
+        logging.error(f"Could not inspect COLMAP options: {e}. Exiting.")
+        raise SystemExit(1)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Could not inspect COLMAP {command_name} options. Exiting.")
+        raise SystemExit(e.returncode)
+
+    help_text = completed.stdout + completed.stderr
+    for option_name in option_names:
+        if option_name in help_text:
+            return option_name
+
+    logging.error(f"COLMAP {command_name} does not support any of: {', '.join(option_names)}")
+    raise SystemExit(1)
+
+
 def run_checked(command, failure_message):
     try:
+        print(shlex.join(command), flush=True)
         subprocess.run(command, check=True)
     except OSError as e:
         logging.error(f"{failure_message} could not start: {e}. Exiting.")
@@ -75,6 +101,22 @@ def normalize_sparse_output(sparse_path):
 
 if not args.skip_matching:
     os.makedirs(source_path / "distorted" / "sparse", exist_ok=True)
+    feature_use_gpu_option = supported_colmap_option(
+        "feature_extractor",
+        ["--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"],
+    )
+    max_num_features_option = supported_colmap_option(
+        "feature_extractor",
+        ["--SiftExtraction.max_num_features"],
+    )
+    matching_use_gpu_option = supported_colmap_option(
+        "exhaustive_matcher",
+        ["--FeatureMatching.use_gpu", "--SiftMatching.use_gpu"],
+    )
+    max_num_matches_option = supported_colmap_option(
+        "exhaustive_matcher",
+        ["--FeatureMatching.max_num_matches", "--SiftMatching.max_num_matches"],
+    )
 
     ## Feature extraction
     run_checked([
@@ -83,16 +125,16 @@ if not args.skip_matching:
         "--image_path", str(source_path / "input"),
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", args.camera,
-        "--SiftExtraction.use_gpu", str(use_gpu),
-        "--SiftExtraction.max_num_features", str(args.max_num_features),
+        feature_use_gpu_option, str(use_gpu),
+        max_num_features_option, str(args.max_num_features),
     ], "Feature extraction")
 
     ## Feature matching
     run_checked([
         colmap_command, "exhaustive_matcher",
         "--database_path", str(source_path / "distorted" / "database.db"),
-        "--SiftMatching.use_gpu", str(use_gpu),
-        "--SiftMatching.max_num_matches", str(args.max_num_matches),
+        matching_use_gpu_option, str(use_gpu),
+        max_num_matches_option, str(args.max_num_matches),
     ], "Feature matching")
 
     ### Bundle adjustment

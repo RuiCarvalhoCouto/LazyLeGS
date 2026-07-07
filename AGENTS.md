@@ -179,7 +179,7 @@ with --image_cache_size 32 or 64
 
 ## Required Logging
 
-For every substantial change, add an entry at the bottom of `LOGS.md` in the root folder, oldest to latest.
+For every substantial change, add an entry at the bottom of `LOGS.md` file in the root folder, oldest to latest.
 
 New log entries must always be appended at the end of the file, never in the middle or beginning, even if an entry seems similar to existing ones or the file format seems inconsistent.
 

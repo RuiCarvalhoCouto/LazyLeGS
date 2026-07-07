@@ -98,3 +98,15 @@
   COLMAP can clamp detected SIFT features during feature extraction before matching starts, so raising only the matching limit does not prevent feature-count clamp warnings.
 
 <br>
+
+## 2026-07-07
+
+- Files changed:
+  - convert.py
+  - LOGS.md
+- Summary:
+  Updated `convert.py` to inspect the installed COLMAP command help and select the supported option names for feature extraction GPU use, feature matching GPU use, and maximum match count. Added external command logging so COLMAP launches show the exact options being passed.
+- Reason:
+  Newer COLMAP versions use `FeatureExtraction.*` and `FeatureMatching.*` option namespaces, so passing only older `SiftMatching.max_num_matches` did not raise the active matching limit and feature-clamp warnings could remain at the old default.
+
+<br>
